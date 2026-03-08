@@ -1,38 +1,46 @@
-import { Redirect, Tabs } from 'expo-router'
-import { StatusBar } from 'expo-status-bar'
-import { CustomTabBar } from '@/components/Elements/CustomTabBar'
-import { useAuth } from '@/components/Providers/AuthProvider'
+import { Redirect, Tabs } from "expo-router";
+import { TabBar } from "@/components/Elements/TabBar";
+import { useAuth } from "@/components/Providers/AuthProvider";
 
 export default function TabsLayout() {
-  const { user } = useAuth()
+  const { user } = useAuth();
 
   if (!user) {
-    return <Redirect href='/(auth)/login' />
+    return <Redirect href="/(auth)/login" />;
   }
 
   return (
     <>
-      <StatusBar hidden />
       <Tabs
-        tabBar={(props) => <CustomTabBar {...props} />}
+        tabBar={(props) => <TabBar {...props} />}
         screenOptions={{
           headerShown: false,
-          animation: 'shift',
+          animation: "shift",
         }}
       >
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="vault" />
+        <Tabs.Screen name="chat" />
+        <Tabs.Screen name="settings" />
         <Tabs.Screen
-          name='index'
+          name="profile"
           options={{
-            title: 'Home',
+            tabBarStyle: { display: "none" },
           }}
         />
         <Tabs.Screen
-          name='profile'
+          name="album"
           options={{
-            title: 'Profile',
+            tabBarStyle: { display: "none" },
+          }}
+        />
+        <Tabs.Screen
+          name="dm"
+          options={{
+            tabBarStyle: { display: "none" },
           }}
         />
       </Tabs>
     </>
-  )
+  );
 }

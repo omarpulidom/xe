@@ -44,7 +44,7 @@ export default function RootLayout() {
         flex: 1,
       }}
     >
-      <StatusBar hidden={true} backgroundColor={'transparent'} />
+      <StatusBar style="light" backgroundColor={'transparent'} translucent />
       <AppProviders>
         <RootStack />
       </AppProviders>

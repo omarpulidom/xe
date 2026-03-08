@@ -1,10 +1,13 @@
 {
   "expo": {
-    "name": "PM Expo Starter Template",
-    "slug": "pm-expo-starter-template",
+    "name": "Calc",
+    "slug": "calc",
     "version": "0.0.1",
-    "scheme": "com.pm.template",
-    "platforms": ["ios", "android"],
+    "scheme": "com.pm.calc",
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "plugins": [
       "expo-dev-client",
       "expo-router",
@@ -12,7 +15,9 @@
       [
         "expo-asset",
         {
-          "assets": ["./src/assets/images"]
+          "assets": [
+            "./src/assets/images"
+          ]
         }
       ],
       [
@@ -37,21 +42,24 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pm.template",
+      "bundleIdentifier": "com.pm.calc",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "appleTeamId": "C5TXZNQR66"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/appIcons/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.pm.template",
+      "package": "com.pm.calc",
       "versionCode": 1
     },
     "extra": {

@@ -1,5 +1,5 @@
 {
-  "name": "pm-expo-starter-template",
+  "name": "calc",
   "version": "0.0.1",
   "main": "expo-router/entry",
   "scripts": {
@@ -18,6 +18,8 @@
     "ts": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo-google-fonts/fira-code": "^0.4.1",
+    "@expo-google-fonts/geist-mono": "^0.4.1",
     "@expo-google-fonts/montserrat": "^0.4.2",
     "@expo/vector-icons": "^15.0.3",
     "@formatjs/intl-datetimeformat": "6.18.2",
@@ -48,6 +50,7 @@
     "expo-updates": "^29.0.15",
     "ky": "1.12.0",
     "nativewind": "latest",
+    "phosphor-react-native": "^3.0.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",

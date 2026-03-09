@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAuth } from "@/components/Providers/AuthProvider";
+
 import { router } from "expo-router";
 import { Colors } from "@/components/colors";
 import * as Icon from "phosphor-react-native";

@@ -1,47 +1,54 @@
-import { create } from 'zustand'
-import { createJSONStorage, persist } from 'zustand/middleware'
-import { zustandMMKVStorage } from '@/lib/mmkv'
-import { createAuthSlice } from './auth.store'
-import type { GlobalStoreType } from './types'
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { zustandMMKVStorage } from "@/lib/mmkv";
+import { createVaultSlice } from "./vault.store";
+import type { GlobalStoreType } from "./types";
 
-const MAIN_STORE_NAME_PERSIST = 'zustand-main-stores'
+const MAIN_STORE_NAME_PERSIST = "zustand-main-stores";
 
-type PersistedAuthState = Pick<GlobalStoreType['auth'], 'user' | 'accessToken' | 'refreshToken'>
+/**
+ * Only persist lastUnlockTime from vault.
+ * CRITICAL: masterKey is NEVER persisted — only exists in RAM.
+ */
+type PersistedVaultState = Pick<GlobalStoreType["vault"], "lastUnlockTime">;
 
 type PersistedState = {
-  auth: PersistedAuthState
-}
+  vault: PersistedVaultState;
+};
 
 export const useGlobalStore = create<GlobalStoreType>()(
   persist(
     (...args) => ({
-      auth: createAuthSlice(...args),
+      vault: createVaultSlice(...args),
     }),
     {
       name: MAIN_STORE_NAME_PERSIST,
       storage: createJSONStorage(() => zustandMMKVStorage),
       partialize(state): PersistedState {
         return {
-          auth: {
-            user: state.auth.user,
-            accessToken: state.auth.accessToken,
-            refreshToken: state.auth.refreshToken,
+          vault: {
+            lastUnlockTime: state.vault.lastUnlockTime,
+            // NOTE: masterKey is intentionally excluded — never touches disk
           },
-        }
+        };
       },
-      merge: (persistedState: unknown, currentState: GlobalStoreType): GlobalStoreType => {
-        const persisted = persistedState as PersistedState | undefined
+      merge: (
+        persistedState: unknown,
+        currentState: GlobalStoreType,
+      ): GlobalStoreType => {
+        const persisted = persistedState as PersistedState | undefined;
 
         return {
           ...currentState,
-          auth: {
-            ...currentState.auth,
-            user: persisted?.auth?.user ?? currentState.auth.user,
-            accessToken: persisted?.auth?.accessToken ?? currentState.auth.accessToken,
-            refreshToken: persisted?.auth?.refreshToken ?? currentState.auth.refreshToken,
+          vault: {
+            ...currentState.vault,
+            lastUnlockTime:
+              persisted?.vault?.lastUnlockTime ??
+              currentState.vault.lastUnlockTime,
+            // masterKey stays null until runtime unlock
           },
-        }
+        };
       },
     },
   ),
-)
+);

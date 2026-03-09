@@ -1,10 +1,13 @@
 import { AntDesign, Entypo } from "@expo/vector-icons";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useRouter } from "expo-router";
 
 import { Colors } from "@/components/colors";
 import { SelectInput } from "@/components/Elements/SelectInput";
+import { useVault } from "@/components/Providers/VaultProvider";
+import { getFileCount, getAlbumCount } from "@/lib/vault";
 
 const data = [
   {
@@ -25,8 +28,41 @@ const data = [
   },
 ];
 
+function formatTimestamp(ts: number | null): string {
+  if (!ts) return "[--/--/-- --:--:--]";
+  const d = new Date(ts);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `[${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear().toString().slice(2)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}]`;
+}
+
 export default function HomeTab() {
+  const router = useRouter();
+  const { lock, lastUnlockTime } = useVault();
   const [value, setValue] = useState<string | null>(null);
+  const [fileCount, setFileCount] = useState(0);
+  const [albumCount, setAlbumCount] = useState(0);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const [files, albums] = await Promise.all([
+        getFileCount(),
+        getAlbumCount(),
+      ]);
+      setFileCount(files);
+      setAlbumCount(albums);
+    } catch (err) {
+      console.error("[HomeTab] loadStats error:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  const handleLock = useCallback(async () => {
+    await lock();
+    router.replace("/(auth)/calculator");
+  }, [lock, router]);
 
   return (
     <SafeAreaView className="px-8 pt-8 bg-primary">
@@ -75,7 +111,7 @@ export default function HomeTab() {
               <Text className="ml-4 mr-2 text-secondary-500 text-xl font-fira-code">
                 vault files:
               </Text>
-              <Text className="text-secondary text-xl font-fira-code">12</Text>
+              <Text className="text-secondary text-xl font-fira-code">{fileCount}</Text>
             </View>
             <View className="flex-col gap-1">
               <View className="flex-row items-center">
@@ -85,7 +121,7 @@ export default function HomeTab() {
                 </Text>
               </View>
               <Text className="ml-6 text-secondary text-lg font-fira-code">
-                [12/11/2025 01:22:35]
+                {formatTimestamp(lastUnlockTime)}
               </Text>
             </View>
           </View>
@@ -98,9 +134,12 @@ export default function HomeTab() {
                 0xAD82JK...8KD94H
               </Text>
             </View>
-            <TouchableOpacity className="items-center justify-center h-12 w-28 bg-primary-500 rounded-2xl">
+            <TouchableOpacity
+              onPress={handleLock}
+              className="items-center justify-center h-12 w-28 bg-primary-500 rounded-2xl"
+            >
               <Text className="text-secondary-400 text-lg font-fira-code">
-                /share
+                /lock
               </Text>
             </TouchableOpacity>
           </View>

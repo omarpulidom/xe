@@ -27,7 +27,9 @@
           "image": "./src/assets/appIcons/adaptive-icon.png",
           "imageWidth": 150
         }
-      ]
+      ],
+      "expo-sqlite",
+      "expo-secure-store"
     ],
     "newArchEnabled": true,
     "experiments": {

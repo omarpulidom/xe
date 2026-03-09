@@ -11,6 +11,8 @@ import { getFilesByAlbum, deleteFile, type VaultFile } from "@/lib/vault";
 import { useVault } from "@/components/Providers/VaultProvider";
 import { Alert, Modal, Image, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { VideoView, useVideoPlayer } from "expo-video";
+import { WebView } from "react-native-webview";
 
 const typeData = [
   {
@@ -52,6 +54,13 @@ function formatTimestamp(ts: number): string {
   return `[${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear().toString().slice(2)} ${pad(d.getHours())}:${pad(d.getMinutes())}]`;
 }
 
+function VideoFilePlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.play();
+  });
+  return <VideoView player={player} style={{ flex: 1 }} contentFit="contain" />;
+}
+
 export default function AlbumTab() {
   const params = useLocalSearchParams<{ albumId: string; albumName: string }>();
   const albumId = params.albumId ?? "";
@@ -64,7 +73,10 @@ export default function AlbumTab() {
   const insets = useSafeAreaInsets();
 
   // Viewing state
-  const [viewingFile, setViewingFile] = useState<string | null>(null);
+  const [viewingFile, setViewingFile] = useState<{
+    uri: string;
+    mime: string;
+  } | null>(null);
   const [decryptingFileId, setDecryptingFileId] = useState<string | null>(null);
   const [addingFiles, setAddingFiles] = useState(false);
 
@@ -144,7 +156,7 @@ export default function AlbumTab() {
         setDecryptingFileId(file.id);
         const decryptedUri = await decryptFileToCache(file.id);
         if (decryptedUri) {
-          setViewingFile(`file://${decryptedUri}`);
+          setViewingFile({ uri: `file://${decryptedUri}`, mime: file.mime });
         } else {
           Alert.alert("Error", "Failed to decrypt file");
         }
@@ -322,14 +334,23 @@ export default function AlbumTab() {
               </Text>
             </TouchableOpacity>
           </View>
-          <View className="flex-1 items-center justify-center">
-            {viewingFile && (
-              <Image
-                source={{ uri: viewingFile }}
-                className="w-full h-full"
-                resizeMode="contain"
-              />
-            )}
+          <View className="flex-1">
+            {viewingFile &&
+              (viewingFile.mime.startsWith("image/") ? (
+                <Image
+                  source={{ uri: viewingFile.uri }}
+                  className="w-full h-full"
+                  resizeMode="contain"
+                />
+              ) : viewingFile.mime.startsWith("video/") ? (
+                <VideoFilePlayer uri={viewingFile.uri} />
+              ) : (
+                <WebView
+                  source={{ uri: viewingFile.uri }}
+                  style={{ flex: 1 }}
+                  originWhitelist={["*"]}
+                />
+              ))}
           </View>
         </View>
       </Modal>

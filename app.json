@@ -29,9 +29,9 @@
         }
       ],
       "expo-sqlite",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-video"
     ],
-    "newArchEnabled": true,
     "experiments": {
       "typedRoutes": true,
       "tsconfigPaths": true

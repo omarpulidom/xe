@@ -159,7 +159,7 @@ export default function AlbumTab() {
   );
 
   const handleCloseView = useCallback(async () => {
-    // The user requested that we do NOT delete the file from cache immediately upon closing.
+    // I do NOT delete the file from cache immediately upon closing.
     // Instead it will remain in CacheDirectory and be cleared when the vault locks or app resets.
     setViewingFile(null);
   }, []);

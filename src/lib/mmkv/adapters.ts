@@ -11,7 +11,7 @@ export const clientStorage: JSONStorage = {
     return value === undefined ? null : value;
   },
   removeItem: (key) => {
-    reactQueryStorage.delete(key);
+    reactQueryStorage.remove(key);
   },
 };
 
@@ -34,7 +34,7 @@ export const zustandMMKVStorage: StateStorage = {
   },
   removeItem: (name) => {
     try {
-      storageMMKV.delete(name);
+      storageMMKV.remove(name);
     } catch (e) {
       console.warn(`[zustandMMKVStorage] removeItem failed for "${name}":`, e);
     }

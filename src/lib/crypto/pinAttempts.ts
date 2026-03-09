@@ -76,6 +76,6 @@ export function recordFailedAttempt(): {
  * Resets the failed attempts counter (called on successful unlock).
  */
 export function resetAttempts(): void {
-  storageMMKV.delete(MMKV_KEY_ATTEMPTS);
-  storageMMKV.delete(MMKV_KEY_LOCKED_UNTIL);
+  storageMMKV.remove(MMKV_KEY_ATTEMPTS);
+  storageMMKV.remove(MMKV_KEY_LOCKED_UNTIL);
 }

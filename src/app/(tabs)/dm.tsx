@@ -12,7 +12,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Colors } from "@/components/colors";
 import * as Icon from "phosphor-react-native";
-import React from "react";
 import { AntDesign } from "@expo/vector-icons";
 
 export default function DMTab() {

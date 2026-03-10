@@ -12,9 +12,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { randomUUID } from "react-native-quick-crypto";
 
 import * as Icon from "phosphor-react-native";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { SelectInput } from "@/components/Elements/SelectInput";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import {
   getAlbums,
   getAlbumsByMimeType,
@@ -23,6 +23,7 @@ import {
   deleteAlbum,
   type AlbumWithCount,
 } from "@/lib/vault";
+import { AntDesign } from "@expo/vector-icons";
 
 const typeData = [
   {
@@ -66,13 +67,12 @@ export default function VaultTab() {
   const [newAlbumName, setNewAlbumName] = useState("");
 
   const { width } = useWindowDimensions();
-  // px-8 = 32px each side (64 total), gap between columns = 24
-  const itemWidth = (width - 64 - 24) / 2;
+  // px-8 = 32px each side (64 total), gap between columns = 12
+  const itemWidth = (width - 64 - 12) / 2;
 
   const filteredAlbums = useMemo(() => {
     const result = [...albums];
 
-    // Sort (type filter doesn't apply to albums)
     const sort = sortValue ?? "name";
     result.sort((a, b) => {
       if (sort === "size") return b.file_count - a.file_count;
@@ -84,6 +84,7 @@ export default function VaultTab() {
   }, [albums, sortValue]);
 
   const loadAlbums = useCallback(async () => {
+    //type filter is done via SQL query, so we only fetch relevant albums and their file counts
     try {
       let data: AlbumWithCount[];
       if (typeValue === "img") {
@@ -101,9 +102,9 @@ export default function VaultTab() {
     }
   }, [typeValue]);
 
-  useEffect(() => {
+  useFocusEffect(() => {
     loadAlbums();
-  }, [loadAlbums]);
+  });
 
   const handleCreateAlbum = useCallback(async () => {
     const name = newAlbumName.trim();
@@ -144,27 +145,33 @@ export default function VaultTab() {
         <Text className="pt-1 text-secondary text-4xl font-geist-mono">
           VAULT/
         </Text>
-        <View className="flex-row items-center gap-3">
-          <TouchableOpacity
-            onPress={() => setShowNewAlbum(true)}
-            className="items-center justify-center h-12 w-24 bg-secondary-500 rounded-2xl"
-          >
-            <Text className="text-primary-400 text-lg font-fira-code-semibold">
-              /md
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center">
-            <Icon.DotsThreeVerticalIcon
-              size={24}
-              color={Colors.secondary[400]}
-            />
-          </TouchableOpacity>
-        </View>
+        {!showNewAlbum && (
+          <View className="flex-row items-center gap-3">
+            <TouchableOpacity
+              onPress={() => setShowNewAlbum(true)}
+              className="items-center justify-center h-12 w-24 bg-secondary-500 rounded-2xl"
+            >
+              <Text className="text-primary-400 text-lg font-fira-code-semibold">
+                /md
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center">
+              <Icon.DotsThreeVerticalIcon
+                size={24}
+                color={Colors.secondary[400]}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* New Album Input */}
       {showNewAlbum && (
         <View className="mt-4 flex-row items-center gap-3">
+          <Text className="text-secondary-600 text-xl font-fira-code">
+            <Text className="text-primary-100">{">"}</Text> md
+          </Text>
           <TextInput
             value={newAlbumName}
             onChangeText={setNewAlbumName}
@@ -176,11 +183,9 @@ export default function VaultTab() {
           />
           <TouchableOpacity
             onPress={handleCreateAlbum}
-            className="h-12 w-16 bg-secondary-500 rounded-2xl items-center justify-center"
+            className="h-12 w-12 bg-secondary-500 rounded-2xl items-center justify-center"
           >
-            <Text className="text-primary text-lg font-fira-code-semibold">
-              ok
-            </Text>
+            <AntDesign name="enter" size={18} color={Colors.primary.DEFAULT} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => {
@@ -189,7 +194,9 @@ export default function VaultTab() {
             }}
             className="h-12 w-12 bg-primary-500 rounded-2xl items-center justify-center"
           >
-            <Text className="text-secondary-400 text-lg font-fira-code">×</Text>
+            <Text className="text-secondary-400 text-lg font-fira-code">
+              ^C
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -205,7 +212,7 @@ export default function VaultTab() {
         </Text>
       </View>
       {/* Separator */}
-      <View className="h-px bg-primary-400 mt-6" />
+      <View className="h-px bg-primary-500 mt-4" />
       {/* Filters */}
       <View className="mt-4 items-center flex-row justify-between">
         <Text className="text-primary-100 text-xl font-fira-code">
@@ -235,8 +242,9 @@ export default function VaultTab() {
         numColumns={2}
         keyExtractor={(item) => item.id}
         className="mt-6"
-        columnWrapperClassName="gap-6"
+        columnWrapperClassName="justify-between"
         contentContainerClassName="gap-6 pb-10"
+        showsVerticalScrollIndicator={false}
         renderItem={({ item: album }) => (
           <TouchableOpacity
             className="border-2 rounded-2xl p-4 border-primary-500 aspect-square flex-col justify-between"

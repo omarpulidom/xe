@@ -86,6 +86,10 @@ export default function AlbumTab() {
   const [decryptingFileId, setDecryptingFileId] = useState<string | null>(null);
   const [addingFiles, setAddingFiles] = useState(false);
 
+  const { width } = useWindowDimensions();
+  // px-8 = 32px each side (64 total), gap between columns = 12
+  const itemWidth = (width - 64 - 12) / 2;
+
   const loadFiles = useCallback(async () => {
     if (!albumId) return;
     try {
@@ -203,10 +207,6 @@ export default function AlbumTab() {
     loadFiles();
   }, [loadFiles]);
 
-  const { width } = useWindowDimensions();
-  // px-8 = 32px each side (64 total), gap between columns = 24
-  const itemWidth = (width - 64 - 24) / 2;
-
   const filteredFiles = useMemo(() => {
     let result = [...files];
 
@@ -260,7 +260,7 @@ export default function AlbumTab() {
         </Text>
       </View>
       {/* Separator */}
-      <View className="h-px bg-primary-400 mt-6" />
+      <View className="h-px bg-primary-500 mt-4" />
       {/* Filters */}
       <View className="mt-4 items-center flex-row justify-between">
         <Text className="text-primary-100 text-xl font-fira-code">
@@ -290,8 +290,9 @@ export default function AlbumTab() {
         numColumns={2}
         keyExtractor={(item) => item.id}
         className="mt-6"
-        columnWrapperClassName="gap-6"
+        columnWrapperClassName="justify-between"
         contentContainerClassName="gap-6 pb-28"
+        showsVerticalScrollIndicator={false}
         renderItem={({ item: file }) => (
           <TouchableOpacity
             style={{ width: itemWidth }}

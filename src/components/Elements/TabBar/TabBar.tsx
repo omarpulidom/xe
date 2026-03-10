@@ -1,13 +1,13 @@
-import * as Icon from "phosphor-react-native";
-import { Colors } from "@/components/colors";
-import { Text, TouchableOpacity, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import * as Icon from "phosphor-react-native";
+import { Text, TouchableOpacity, View, type ViewStyle } from "react-native";
+import { Colors } from "@/components/colors";
 
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const focusedRoute = state.routes[state.index];
   const { options } = descriptors[focusedRoute.key];
 
-  if ((options.tabBarStyle as any)?.display === "none") {
+  if ((options.tabBarStyle as ViewStyle)?.display === "none") {
     return null;
   }
 
@@ -105,6 +105,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           })}
 
           {/* Screen 3: Chat */}
+          {/*
           {state.routes.map((route, index) => {
             if (route.name !== "chat") return null;
             const isFocused = state.index === index;
@@ -147,6 +148,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               </TouchableOpacity>
             );
           })}
+          */}
 
           {/* Screen 4: Settings */}
           {state.routes.map((route, index) => {

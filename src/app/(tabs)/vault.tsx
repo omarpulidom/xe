@@ -1,21 +1,24 @@
 import { Colors } from "@/components/colors";
 import {
-  ScrollView,
+  FlatList,
   Text,
   TouchableOpacity,
   View,
   TextInput,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { randomUUID } from "react-native-quick-crypto";
 
 import * as Icon from "phosphor-react-native";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { SelectInput } from "@/components/Elements/SelectInput";
 import { router } from "expo-router";
 import {
   getAlbums,
+  getAlbumsByMimeType,
+  getAlbumsWithDocs,
   createAlbum,
   deleteAlbum,
   type AlbumWithCount,
@@ -62,14 +65,41 @@ export default function VaultTab() {
   const [showNewAlbum, setShowNewAlbum] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState("");
 
+  const { width } = useWindowDimensions();
+  // px-8 = 32px each side (64 total), gap between columns = 24
+  const itemWidth = (width - 64 - 24) / 2;
+
+  const filteredAlbums = useMemo(() => {
+    const result = [...albums];
+
+    // Sort (type filter doesn't apply to albums)
+    const sort = sortValue ?? "name";
+    result.sort((a, b) => {
+      if (sort === "size") return b.file_count - a.file_count;
+      if (sort === "date") return b.created_at - a.created_at;
+      return a.name.localeCompare(b.name); // name (default)
+    });
+
+    return result;
+  }, [albums, sortValue]);
+
   const loadAlbums = useCallback(async () => {
     try {
-      const data = await getAlbums();
+      let data: AlbumWithCount[];
+      if (typeValue === "img") {
+        data = await getAlbumsByMimeType("image/");
+      } else if (typeValue === "vid") {
+        data = await getAlbumsByMimeType("video/");
+      } else if (typeValue === "doc") {
+        data = await getAlbumsWithDocs();
+      } else {
+        data = await getAlbums();
+      }
       setAlbums(data);
     } catch (err) {
       console.error("[VaultTab] loadAlbums error:", err);
     }
-  }, []);
+  }, [typeValue]);
 
   useEffect(() => {
     loadAlbums();
@@ -107,12 +137,6 @@ export default function VaultTab() {
     [loadAlbums],
   );
 
-  // Chunk albums into pairs for grid layout
-  const albumPairs: (AlbumWithCount | null)[][] = [];
-  for (let i = 0; i < albums.length; i += 2) {
-    albumPairs.push([albums[i], albums[i + 1] ?? null]);
-  }
-
   return (
     <SafeAreaView className="flex-1 px-8 pt-8 bg-primary">
       {/* Header*/}
@@ -126,7 +150,7 @@ export default function VaultTab() {
             className="items-center justify-center h-12 w-24 bg-secondary-500 rounded-2xl"
           >
             <Text className="text-primary-400 text-lg font-fira-code-semibold">
-              /add
+              /md
             </Text>
           </TouchableOpacity>
           <TouchableOpacity className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center">
@@ -206,65 +230,57 @@ export default function VaultTab() {
         />
       </View>
       {/* Albums */}
-      <ScrollView className="mt-6" contentContainerClassName="gap-6">
-        {albums.length === 0 ? (
+      <FlatList
+        data={filteredAlbums}
+        numColumns={2}
+        keyExtractor={(item) => item.id}
+        className="mt-6"
+        columnWrapperClassName="gap-6"
+        contentContainerClassName="gap-6 pb-10"
+        renderItem={({ item: album }) => (
+          <TouchableOpacity
+            className="border-2 rounded-2xl p-4 border-primary-500 aspect-square flex-col justify-between"
+            style={{ width: itemWidth }}
+            onPress={() =>
+              router.push({
+                pathname: "/(tabs)/album",
+                params: { albumId: album.id, albumName: album.name },
+              })
+            }
+            onLongPress={() => handleDeleteAlbum(album.id, album.name)}
+          >
+            <View className="flex-row items-center justify-between">
+              <Icon.FolderIcon size={48} color={Colors.primary[100]} />
+              <View className="-mr-2">
+                <Icon.DotsThreeVerticalIcon
+                  size={24}
+                  color={Colors.primary[100]}
+                />
+              </View>
+            </View>
+            <View className="flex-col">
+              <Text className="text-secondary-300 text-xl font-fira-code">
+                {album.name}/
+              </Text>
+              <Text className="text-primary-100 text-lg font-fira-code-light">
+                {album.file_count} file
+                {album.file_count !== 1 ? "s" : ""}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
           <View className="items-center justify-center py-16">
             <Icon.FolderIcon size={64} color={Colors.primary[300]} />
             <Text className="text-primary-100 text-xl font-fira-code mt-4">
               {"// "}no albums yet
             </Text>
             <Text className="text-primary-300 text-lg font-fira-code mt-1">
-              tap /add to create one
+              tap /md to create one
             </Text>
           </View>
-        ) : (
-          albumPairs.map((pair, pairIndex) => (
-            <View
-              key={`pair-${pairIndex}`}
-              className="flex-row justify-center gap-6"
-            >
-              {pair.map((album, idx) =>
-                album ? (
-                  <TouchableOpacity
-                    key={album.id}
-                    className="border-2 rounded-2xl p-4 border-primary-500 flex-1 aspect-square flex-col justify-between"
-                    onPress={() =>
-                      router.push({
-                        pathname: "/(tabs)/album",
-                        params: { albumId: album.id, albumName: album.name },
-                      })
-                    }
-                    onLongPress={() => handleDeleteAlbum(album.id, album.name)}
-                  >
-                    <View className="flex-row items-center justify-between">
-                      <Icon.FolderIcon size={48} color={Colors.primary[100]} />
-                      <View className="-mr-2">
-                        <Icon.DotsThreeVerticalIcon
-                          size={24}
-                          color={Colors.primary[100]}
-                        />
-                      </View>
-                    </View>
-                    <View className="flex-col">
-                      <Text className="text-secondary-300 text-xl font-fira-code">
-                        {album.name}/
-                      </Text>
-                      <Text className="text-primary-100 text-lg font-fira-code-light">
-                        {album.file_count} file
-                        {album.file_count !== 1 ? "s" : ""}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ) : (
-                  <View key={`empty-${idx}`} className="flex-1 aspect-square" />
-                ),
-              )}
-            </View>
-          ))
-        )}
-        {/* Bottom Spacer */}
-        <View className="h-20" />
-      </ScrollView>
+        }
+      />
     </SafeAreaView>
   );
 }

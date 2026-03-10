@@ -1,7 +1,13 @@
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import {
+  FlatList,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import * as Icon from "phosphor-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Colors } from "@/components/colors";
 import { SelectInput } from "@/components/Elements/SelectInput";
 import { router, useLocalSearchParams } from "expo-router";
@@ -197,11 +203,34 @@ export default function AlbumTab() {
     loadFiles();
   }, [loadFiles]);
 
-  // Chunk files into pairs for grid layout
-  const filePairs: (VaultFile | null)[][] = [];
-  for (let i = 0; i < files.length; i += 2) {
-    filePairs.push([files[i], files[i + 1] ?? null]);
-  }
+  const { width } = useWindowDimensions();
+  // px-8 = 32px each side (64 total), gap between columns = 24
+  const itemWidth = (width - 64 - 24) / 2;
+
+  const filteredFiles = useMemo(() => {
+    let result = [...files];
+
+    // Type filter
+    if (typeValue && typeValue !== "all") {
+      result = result.filter((f) => {
+        if (typeValue === "img") return f.mime.startsWith("image/");
+        if (typeValue === "vid") return f.mime.startsWith("video/");
+        if (typeValue === "doc")
+          return !f.mime.startsWith("image/") && !f.mime.startsWith("video/");
+        return true;
+      });
+    }
+
+    // Sort
+    const sort = sortValue ?? "date";
+    result.sort((a, b) => {
+      if (sort === "name") return a.name.localeCompare(b.name);
+      if (sort === "size") return b.size - a.size;
+      return b.created_at - a.created_at; // date (default)
+    });
+
+    return result;
+  }, [files, typeValue, sortValue]);
 
   return (
     <SafeAreaView className="flex-1 px-8 pt-8 bg-primary">
@@ -256,8 +285,39 @@ export default function AlbumTab() {
         />
       </View>
       {/* Files */}
-      <ScrollView className="mt-6" contentContainerClassName="gap-6">
-        {files.length === 0 ? (
+      <FlatList
+        data={filteredFiles}
+        numColumns={2}
+        keyExtractor={(item) => item.id}
+        className="mt-6"
+        columnWrapperClassName="gap-6"
+        contentContainerClassName="gap-6 pb-28"
+        renderItem={({ item: file }) => (
+          <TouchableOpacity
+            style={{ width: itemWidth }}
+            onPress={() => handleViewFile(file)}
+            onLongPress={() => handleDeleteFile(file.id, file.name)}
+            disabled={decryptingFileId === file.id}
+          >
+            <View className="mb-2 border-2 rounded-2xl border-primary-500 w-full aspect-square items-center justify-center">
+              {decryptingFileId === file.id ? (
+                <ActivityIndicator color={Colors.secondary[500]} />
+              ) : (
+                <Icon.LockIcon size={32} color={Colors.primary[200]} />
+              )}
+            </View>
+            <Text
+              className="text-secondary-500 text-lg font-fira-code text-center"
+              numberOfLines={1}
+            >
+              {file.name}
+            </Text>
+            <Text className="text-primary-100 text-lg font-fira-code-light text-center">
+              {formatTimestamp(file.created_at)}
+            </Text>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
           <View className="items-center justify-center py-16">
             <Icon.FileIcon size={64} color={Colors.primary[300]} />
             <Text className="text-primary-100 text-xl font-fira-code mt-4">
@@ -267,46 +327,8 @@ export default function AlbumTab() {
               tap /add to import
             </Text>
           </View>
-        ) : (
-          filePairs.map((pair, pairIndex) => (
-            <View
-              key={`pair-${pairIndex}`}
-              className="flex-row justify-center gap-6"
-            >
-              {pair.map((file, idx) =>
-                file ? (
-                  <TouchableOpacity
-                    key={file.id}
-                    className="flex-1 relative"
-                    onPress={() => handleViewFile(file)}
-                    onLongPress={() => handleDeleteFile(file.id, file.name)}
-                    disabled={decryptingFileId === file.id}
-                  >
-                    <View className="mb-2 border-2 rounded-2xl border-primary-500 w-full aspect-square items-center justify-center">
-                      {decryptingFileId === file.id ? (
-                        <ActivityIndicator color={Colors.secondary[500]} />
-                      ) : (
-                        <Icon.LockIcon size={32} color={Colors.primary[200]} />
-                      )}
-                    </View>
-                    <Text
-                      className="text-secondary-500 text-lg font-fira-code text-center"
-                      numberOfLines={1}
-                    >
-                      {file.name}
-                    </Text>
-                    <Text className="text-primary-100 text-lg font-fira-code-light text-center">
-                      {formatTimestamp(file.created_at)}
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View key={`empty-${idx}`} className="flex-1 aspect-square" />
-                ),
-              )}
-            </View>
-          ))
-        )}
-      </ScrollView>
+        }
+      />
       <TouchableOpacity
         onPress={handleAddFiles}
         disabled={addingFiles}

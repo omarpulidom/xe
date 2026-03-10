@@ -77,6 +77,42 @@ export async function getAlbums(): Promise<AlbumWithCount[]> {
   return results;
 }
 
+export async function getAlbumsByMimeType(
+  mimePrefix: string,
+): Promise<AlbumWithCount[]> {
+  const database = await getDB();
+  return await database.getAllAsync<AlbumWithCount>(
+    `SELECT a.*, COUNT(f.id) as file_count
+     FROM albums a
+     LEFT JOIN files f ON f.album_id = a.id
+     WHERE EXISTS (
+       SELECT 1 FROM files f2
+       WHERE f2.album_id = a.id
+       AND f2.mime LIKE ?
+     )
+     GROUP BY a.id
+     ORDER BY a.created_at DESC`,
+    [`${mimePrefix}%`],
+  );
+}
+
+export async function getAlbumsWithDocs(): Promise<AlbumWithCount[]> {
+  const database = await getDB();
+  return await database.getAllAsync<AlbumWithCount>(
+    `SELECT a.*, COUNT(f.id) as file_count
+     FROM albums a
+     LEFT JOIN files f ON f.album_id = a.id
+     WHERE EXISTS (
+       SELECT 1 FROM files f2
+       WHERE f2.album_id = a.id
+       AND f2.mime NOT LIKE 'image/%'
+       AND f2.mime NOT LIKE 'video/%'
+     )
+     GROUP BY a.id
+     ORDER BY a.created_at DESC`,
+  );
+}
+
 export async function createAlbum(id: string, name: string): Promise<void> {
   const database = await getDB();
   await database.runAsync("INSERT INTO albums (id, name) VALUES (?, ?)", [

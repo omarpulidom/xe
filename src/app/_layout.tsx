@@ -1,41 +1,42 @@
-import '../global.css'
-import { useFonts } from '@expo-google-fonts/montserrat'
-import { Stack } from 'expo-router'
-import * as SplashScreen from 'expo-splash-screen'
-import { StatusBar } from 'expo-status-bar'
-import { useEffect } from 'react'
-import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { AppFonts } from '@/components/fonts/fonts'
-import { AppProviders } from '@/components/Providers/AppProviders'
+import "../global.css";
+import { useFonts } from "@expo-google-fonts/montserrat";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { AppFonts } from "@/components/fonts/fonts";
+import { AppProviders } from "@/components/Providers/AppProviders";
+import { View } from "react-native";
 
-SplashScreen.preventAutoHideAsync()
+SplashScreen.preventAutoHideAsync();
 
 function RootStack() {
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-      }}
-    />
-  )
+    <View className="flex-1 bg-primary">
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: "transparent" },
+        }}
+      />
+    </View>
+  );
 }
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     ...AppFonts,
-  })
+  });
 
   useEffect(() => {
     if (loaded || error) {
-      SplashScreen.hideAsync()
+      SplashScreen.hideAsync();
     }
-  }, [
-    loaded,
-    error,
-  ])
+  }, [loaded, error]);
 
   if (!loaded && !error) {
-    return null
+    return null;
   }
 
   return (
@@ -44,10 +45,10 @@ export default function RootLayout() {
         flex: 1,
       }}
     >
-      <StatusBar style="light" backgroundColor={'transparent'} translucent />
+      <StatusBar style="light" />
       <AppProviders>
         <RootStack />
       </AppProviders>
     </GestureHandlerRootView>
-  )
+  );
 }

@@ -7,7 +7,15 @@ import {
   useMemo,
   useState,
 } from "react";
-import { File, Paths } from "expo-file-system";
+import { Paths } from "expo-file-system"; // kept only for document/cache directory path constants
+import fs from "react-native-nitro-file-system";
+
+/** Converts an expo Directory.uri (file://...) to a plain POSIX path for nitro-fs. */
+function dirPath(dir: { uri: string }): string {
+  return dir.uri.startsWith("file://")
+    ? dir.uri.slice(7).replace(/\/$/, "")
+    : dir.uri.replace(/\/$/, "");
+}
 import * as Updates from "expo-updates";
 import { randomUUID } from "react-native-quick-crypto";
 import {
@@ -216,12 +224,11 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
     // Wipe decrypted temp files from cache
     try {
-      const cacheDir = Paths.cache;
-      const entries = cacheDir.list();
-      for (const entry of entries) {
-        if (entry instanceof File && entry.name.startsWith("temp_")) {
+      const cachePath = dirPath(Paths.cache);
+      for (const name of fs.readdirSync(cachePath) as string[]) {
+        if (name.startsWith("temp_")) {
           try {
-            entry.delete();
+            fs.unlinkSync(`${cachePath}/${name}`);
           } catch {
             /* ignore */
           }
@@ -246,13 +253,18 @@ export function VaultProvider({ children }: VaultProviderProps) {
       const encryptedKey = encryptFileKey(fileKeyHex, masterKey);
 
       const encryptedFileName = `${fileId}.enc`;
-      const outputFile = new File(Paths.document, encryptedFileName);
+      const outputPath = `${dirPath(Paths.document)}/${encryptedFileName}`;
 
-      await encryptFile(plainUri, outputFile.uri, fileKeyHex);
+      await encryptFile(plainUri, outputPath, fileKeyHex);
 
       try {
-        const plainFile = new File(plainUri);
-        const size = plainFile.exists ? plainFile.size : 0;
+        const size = fs.existsSync(plainUri.replace(/^file:\/\//, ""))
+          ? (
+              fs.statSync(plainUri.replace(/^file:\/\//, "")) as {
+                size: number;
+              }
+            ).size
+          : 0;
 
         await createFile({
           id: fileId,
@@ -266,7 +278,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       } catch (err) {
         // Rollback: remove orphaned encrypted file
         try {
-          outputFile.delete();
+          fs.unlinkSync(outputPath);
         } catch {
           /* ignore */
         }
@@ -293,11 +305,8 @@ export function VaultProvider({ children }: VaultProviderProps) {
       const fileKeyHex = decryptFileKey(fileRow.encrypted_key, masterKey);
       if (!fileKeyHex) throw new Error("Failed to decrypt file key");
 
-      const encryptedUri = new File(Paths.document, fileRow.file_path).uri;
-      const tempDecryptedUri = new File(
-        Paths.cache,
-        `temp_${fileId}_${fileRow.name}`,
-      ).uri;
+      const encryptedUri = `${dirPath(Paths.document)}/${fileRow.file_path}`;
+      const tempDecryptedUri = `${dirPath(Paths.cache)}/temp_${fileId}_${fileRow.name}`;
 
       await decryptFile(encryptedUri, tempDecryptedUri, fileKeyHex);
 
@@ -319,10 +328,10 @@ export function VaultProvider({ children }: VaultProviderProps) {
     //    cannot survive a reload. The live instances are already cleared
     //    above, and Updates.reloadAsync() below will create fresh ones.
     try {
-      const docEntries = Paths.document.list();
-      for (const entry of docEntries) {
+      const docPath = dirPath(Paths.document);
+      for (const name of fs.readdirSync(docPath) as string[]) {
         try {
-          entry.delete();
+          fs.rmSync(`${docPath}/${name}`, { recursive: true });
         } catch {
           /* ignore */
         }
@@ -330,10 +339,10 @@ export function VaultProvider({ children }: VaultProviderProps) {
     } catch (_) {}
     // 5. Cache directory
     try {
-      const cacheEntries = Paths.cache.list();
-      for (const entry of cacheEntries) {
+      const cachePath = dirPath(Paths.cache);
+      for (const name of fs.readdirSync(cachePath) as string[]) {
         try {
-          entry.delete();
+          fs.rmSync(`${cachePath}/${name}`, { recursive: true });
         } catch {
           /* ignore */
         }

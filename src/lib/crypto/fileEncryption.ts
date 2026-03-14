@@ -1,4 +1,11 @@
-import { File } from "expo-file-system";
+import {
+  closeSync,
+  constants,
+  openSync,
+  readSync,
+  statSync,
+  writeSync,
+} from "react-native-nitro-file-system";
 import {
   Buffer,
   createCipheriv,
@@ -19,7 +26,7 @@ import { bytesToHex, hexToBytes } from "./pbkdf2";
  * Generates a random 256-bit file key (hex encoded).
  */
 export function generateFileKey(): string {
-  return bytesToHex(randomBytes(32) as unknown as Uint8Array);
+  return bytesToHex(randomBytes(32));
 }
 
 /**
@@ -31,9 +38,8 @@ export function encryptFileKey(
   masterKey: Uint8Array,
 ): string {
   const key = Buffer.from(masterKey);
-  const iv = randomBytes(12) as unknown as Buffer;
-  // biome-ignore lint/suspicious/noExplicitAny: quick-crypto CipherGCM types conflict with @types/node
-  const cipher = createCipheriv("aes-256-gcm", key, iv) as any;
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
 
   const plaintext = Buffer.from(hexToBytes(fileKeyHex));
   const encrypted: Buffer = cipher.update(plaintext);
@@ -64,8 +70,7 @@ export function decryptFileKey(
     const key = Buffer.from(masterKey);
     const ivBuf = Buffer.from(iv, "base64");
     const tagBuf = Buffer.from(tag, "base64");
-    // biome-ignore lint/suspicious/noExplicitAny: quick-crypto DecipherGCM types conflict with @types/node
-    const decipher = createDecipheriv("aes-256-gcm", key, ivBuf) as any;
+    const decipher = createDecipheriv("aes-256-gcm", key, ivBuf);
     decipher.setAuthTag(tagBuf);
     const decrypted: Buffer = decipher.update(Buffer.from(content, "base64"));
     decipher.final();
@@ -80,14 +85,16 @@ export function decryptFileKey(
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2 MB per chunk — bounds peak RAM
 
 /**
- * Reads a chunk from a FileHandle as a Buffer.
+ * Reads a chunk from a file descriptor at a given position.
  */
-function readChunkFromHandle(
-  handle: ReturnType<File["open"]>,
+function readChunkAtPosition(
+  fd: number,
   length: number,
+  position: number,
 ): Buffer {
-  const bytes = handle.readBytes(length);
-  return Buffer.from(bytes);
+  const buf = new Uint8Array(length);
+  const bytesRead = readSync(fd, buf, 0, length, position);
+  return Buffer.from(buf.buffer, buf.byteOffset, bytesRead);
 }
 
 /**
@@ -102,30 +109,32 @@ export async function encryptFile(
   fileKeyHex: string,
 ): Promise<void> {
   const key = Buffer.from(hexToBytes(fileKeyHex));
-  const iv = randomBytes(12) as unknown as Buffer;
+  const iv = randomBytes(12);
 
-  const inputFile = new File(inputUri);
-  if (!inputFile.exists) throw new Error(`File not found: ${inputUri}`);
-  const totalSize = inputFile.size;
+  let totalSize: number;
+  try {
+    totalSize = (statSync(inputUri) as { size: number }).size;
+  } catch {
+    throw new Error(`File not found: ${inputUri}`);
+  }
 
-  // biome-ignore lint/suspicious/noExplicitAny: quick-crypto CipherGCM types conflict with @types/node
-  const cipher = createCipheriv("aes-256-gcm", key, iv) as any;
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
 
   const outputChunks: Buffer[] = [Buffer.from(iv)];
 
-  // Read input in chunks via FileHandle
-  const handle = inputFile.open();
+  // Read input in chunks via file descriptor
+  const fd = openSync(inputUri, constants.O_RDONLY);
   try {
     let bytesRead = 0;
     while (bytesRead < totalSize) {
       const chunkLen = Math.min(CHUNK_SIZE, totalSize - bytesRead);
-      const plainChunk = readChunkFromHandle(handle, chunkLen);
+      const plainChunk = readChunkAtPosition(fd, chunkLen, bytesRead);
       const encrypted: Buffer = cipher.update(plainChunk);
       outputChunks.push(encrypted);
       bytesRead += chunkLen;
     }
   } finally {
-    handle.close();
+    closeSync(fd);
   }
 
   const finalBuf: Buffer = cipher.final();
@@ -136,9 +145,15 @@ export async function encryptFile(
 
   // Write output in one shot
   const output = Buffer.concat(outputChunks);
-  const outputFile = new File(outputUri);
-  outputFile.create({ overwrite: true });
-  outputFile.write(new Uint8Array(output));
+  const outFd = openSync(
+    outputUri,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC,
+  );
+  try {
+    writeSync(outFd, new Uint8Array(output));
+  } finally {
+    closeSync(outFd);
+  }
 }
 
 /**
@@ -154,32 +169,31 @@ export async function decryptFile(
 ): Promise<void> {
   const key = Buffer.from(hexToBytes(fileKeyHex));
 
-  const inputFile = new File(inputUri);
-  if (!inputFile.exists) throw new Error(`File not found: ${inputUri}`);
-  const totalSize = inputFile.size;
-
-  const handle = inputFile.open();
+  let totalSize: number;
   try {
-    // Read IV (first 12 bytes) — handle starts at offset 0
-    const iv = readChunkFromHandle(handle, 12);
+    totalSize = (statSync(inputUri) as { size: number }).size;
+  } catch {
+    throw new Error(`File not found: ${inputUri}`);
+  }
+
+  const fd = openSync(inputUri, constants.O_RDONLY);
+  try {
+    // Read IV (first 12 bytes)
+    const iv = readChunkAtPosition(fd, 12, 0);
 
     // Read auth tag (last 16 bytes)
-    handle.offset = totalSize - 16;
-    const tag = readChunkFromHandle(handle, 16);
+    const tag = readChunkAtPosition(fd, 16, totalSize - 16);
 
-    // biome-ignore lint/suspicious/noExplicitAny: quick-crypto DecipherGCM types conflict with @types/node
-    const decipher = createDecipheriv("aes-256-gcm", key, iv) as any;
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
 
-    // Seek back to ciphertext start (after IV)
-    handle.offset = 12;
     const ciphertextEnd = totalSize - 16;
     const outputChunks: Buffer[] = [];
 
     let readPos = 12;
     while (readPos < ciphertextEnd) {
       const chunkLen = Math.min(CHUNK_SIZE, ciphertextEnd - readPos);
-      const cipherChunk = readChunkFromHandle(handle, chunkLen);
+      const cipherChunk = readChunkAtPosition(fd, chunkLen, readPos);
       const decrypted: Buffer = decipher.update(cipherChunk);
       outputChunks.push(decrypted);
       readPos += chunkLen;
@@ -189,10 +203,16 @@ export async function decryptFile(
     decipher.final();
 
     const output = Buffer.concat(outputChunks);
-    const outputFile = new File(outputUri);
-    outputFile.create({ overwrite: true });
-    outputFile.write(new Uint8Array(output));
+    const outFd = openSync(
+      outputUri,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC,
+    );
+    try {
+      writeSync(outFd, new Uint8Array(output));
+    } finally {
+      closeSync(outFd);
+    }
   } finally {
-    handle.close();
+    closeSync(fd);
   }
 }

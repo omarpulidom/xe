@@ -178,6 +178,22 @@ export async function deleteFile(id: string): Promise<void> {
   await database.runAsync("DELETE FROM files WHERE id = ?", [id]);
 }
 
+export async function renameFile(id: string, name: string): Promise<void> {
+  const database = await getDB();
+  await database.runAsync("UPDATE files SET name = ? WHERE id = ?", [name, id]);
+}
+
+export async function moveFileToAlbum(
+  id: string,
+  albumId: string,
+): Promise<void> {
+  const database = await getDB();
+  await database.runAsync("UPDATE files SET album_id = ? WHERE id = ?", [
+    albumId,
+    id,
+  ]);
+}
+
 export async function getFileCount(): Promise<number> {
   const database = await getDB();
   const result = await database.getFirstAsync<{ count: number }>(

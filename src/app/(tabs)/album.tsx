@@ -2,6 +2,8 @@ import {
   FlatList,
   Text,
   TouchableOpacity,
+  TextInput,
+  Pressable,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -13,7 +15,15 @@ import { SelectInput } from "@/components/Elements/SelectInput";
 import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import { getFilesByAlbum, deleteFile, type VaultFile } from "@/lib/vault";
+import {
+  getFilesByAlbum,
+  deleteFile,
+  renameFile,
+  moveFileToAlbum,
+  getAlbums,
+  type VaultFile,
+  type AlbumWithCount,
+} from "@/lib/vault";
 import { useVault } from "@/components/Providers/VaultProvider";
 import { Alert, Modal, Image, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -60,6 +70,17 @@ function formatTimestamp(ts: number): string {
   return `[${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear().toString().slice(2)} ${pad(d.getHours())}:${pad(d.getMinutes())}]`;
 }
 
+function formatFileSize(size: number): string {
+  if (!Number.isFinite(size) || size <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const power = Math.min(
+    Math.floor(Math.log(size) / Math.log(1024)),
+    units.length - 1,
+  );
+  const value = size / 1024 ** power;
+  return `${value >= 10 || power === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[power]}`;
+}
+
 function VideoFilePlayer({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, (p) => {
     p.play();
@@ -75,6 +96,7 @@ export default function AlbumTab() {
   const [typeValue, setTypeValue] = useState<string | null>(null);
   const [sortValue, setSortValue] = useState<string | null>(null);
   const [files, setFiles] = useState<VaultFile[]>([]);
+  const [albums, setAlbums] = useState<AlbumWithCount[]>([]);
   const { addFileToAlbum, decryptFileToCache } = useVault();
   const insets = useSafeAreaInsets();
 
@@ -83,6 +105,13 @@ export default function AlbumTab() {
     uri: string;
     mime: string;
   } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null);
+  const [fileActionMode, setFileActionMode] = useState<
+    "menu" | "rename" | "move" | "details" | null
+  >(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [moveAlbumId, setMoveAlbumId] = useState("");
+  const [isApplyingAction, setIsApplyingAction] = useState(false);
   const [decryptingFileId, setDecryptingFileId] = useState<string | null>(null);
   const [addingFiles, setAddingFiles] = useState(false);
 
@@ -99,6 +128,15 @@ export default function AlbumTab() {
       console.error("[AlbumTab] loadFiles error:", err);
     }
   }, [albumId]);
+
+  const loadAlbums = useCallback(async () => {
+    try {
+      const data = await getAlbums();
+      setAlbums(data);
+    } catch (err) {
+      console.error("[AlbumTab] loadAlbums error:", err);
+    }
+  }, []);
 
   const handleAddMedia = useCallback(async () => {
     try {
@@ -203,9 +241,86 @@ export default function AlbumTab() {
     [loadFiles],
   );
 
+  const closeFileActions = useCallback(() => {
+    setFileActionMode(null);
+    setSelectedFile(null);
+    setRenameValue("");
+    setMoveAlbumId("");
+    setIsApplyingAction(false);
+  }, []);
+
+  const openFileActions = useCallback((file: VaultFile) => {
+    setSelectedFile(file);
+    setRenameValue(file.name);
+    setFileActionMode("menu");
+  }, []);
+
+  const handleOpenMove = useCallback(() => {
+    const destinationAlbums = albums.filter((a) => a.id !== albumId);
+    if (destinationAlbums.length === 0) {
+      Alert.alert("Move File", "Create another album first.");
+      return;
+    }
+
+    setMoveAlbumId(destinationAlbums[0].id);
+    setFileActionMode("move");
+  }, [albums, albumId]);
+
+  const handleSubmitRename = useCallback(async () => {
+    if (!selectedFile) return;
+
+    const name = renameValue.trim();
+    if (!name) {
+      Alert.alert("Rename File", "Name cannot be empty.");
+      return;
+    }
+
+    try {
+      setIsApplyingAction(true);
+      await renameFile(selectedFile.id, name);
+      await loadFiles();
+      closeFileActions();
+    } catch (err) {
+      console.error("[AlbumTab] rename file error:", err);
+      Alert.alert("Error", "Could not rename file");
+    } finally {
+      setIsApplyingAction(false);
+    }
+  }, [selectedFile, renameValue, loadFiles, closeFileActions]);
+
+  const handleSubmitMove = useCallback(async () => {
+    if (!selectedFile) return;
+    if (!moveAlbumId) {
+      Alert.alert("Move File", "Pick an album.");
+      return;
+    }
+
+    try {
+      setIsApplyingAction(true);
+      await moveFileToAlbum(selectedFile.id, moveAlbumId);
+      await loadFiles();
+      closeFileActions();
+    } catch (err) {
+      console.error("[AlbumTab] move file error:", err);
+      Alert.alert("Error", "Could not move file");
+    } finally {
+      setIsApplyingAction(false);
+    }
+  }, [selectedFile, moveAlbumId, loadFiles, closeFileActions]);
+
+  const handleDeleteFromMenu = useCallback(() => {
+    if (!selectedFile) return;
+
+    const fileId = selectedFile.id;
+    const fileName = selectedFile.name;
+    closeFileActions();
+    handleDeleteFile(fileId, fileName);
+  }, [selectedFile, closeFileActions, handleDeleteFile]);
+
   useEffect(() => {
     loadFiles();
-  }, [loadFiles]);
+    loadAlbums();
+  }, [loadFiles, loadAlbums]);
 
   const filteredFiles = useMemo(() => {
     let result = [...files];
@@ -297,7 +412,7 @@ export default function AlbumTab() {
           <TouchableOpacity
             style={{ width: itemWidth }}
             onPress={() => handleViewFile(file)}
-            onLongPress={() => handleDeleteFile(file.id, file.name)}
+            onLongPress={() => openFileActions(file)}
             disabled={decryptingFileId === file.id}
           >
             <View className="mb-2 border-2 rounded-2xl border-primary-500 w-full aspect-square items-center justify-center">
@@ -343,6 +458,211 @@ export default function AlbumTab() {
           </Text>
         )}
       </TouchableOpacity>
+
+      <Modal
+        visible={!!selectedFile && !!fileActionMode}
+        transparent
+        animationType="fade"
+        onRequestClose={closeFileActions}
+      >
+        <Pressable
+          className="flex-1 items-center justify-center px-8"
+          style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
+          onPress={closeFileActions}
+        >
+          <Pressable
+            className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl overflow-hidden"
+            onPress={() => {}}
+          >
+            {fileActionMode === "menu" && (
+              <>
+                <View className="px-4 py-4 border-b border-primary-400">
+                  <Text
+                    className="text-secondary text-lg font-fira-code-semibold"
+                    numberOfLines={1}
+                  >
+                    {selectedFile?.name}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  className="px-4 py-4 border-b border-primary-400"
+                  onPress={() => setFileActionMode("rename")}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    rename
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="px-4 py-4 border-b border-primary-400"
+                  onPress={handleOpenMove}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    move
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="px-4 py-4 border-b border-primary-400"
+                  onPress={() => setFileActionMode("details")}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    file_details
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="px-4 py-4 border-b border-primary-400"
+                  onPress={handleDeleteFromMenu}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-red-300 text-lg font-fira-code">
+                    delete
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="px-4 py-4"
+                  onPress={closeFileActions}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-primary-100 text-lg font-fira-code">
+                    cancel
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {fileActionMode === "rename" && (
+              <View className="p-4 gap-4">
+                <Text className="text-secondary-400 text-lg font-fira-code">
+                  rename file
+                </Text>
+                <TextInput
+                  value={renameValue}
+                  onChangeText={setRenameValue}
+                  placeholder="file_name"
+                  placeholderTextColor={Colors.primary[100]}
+                  autoFocus
+                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                  onSubmitEditing={handleSubmitRename}
+                />
+                <View className="flex-row items-center justify-end gap-3">
+                  <TouchableOpacity
+                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                    onPress={() => setFileActionMode("menu")}
+                    disabled={isApplyingAction}
+                  >
+                    <Text className="text-secondary font-fira-code">back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                    onPress={handleSubmitRename}
+                    disabled={isApplyingAction}
+                  >
+                    <Text className="text-primary-500 font-fira-code-semibold">
+                      save
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {fileActionMode === "move" && (
+              <View className="p-4 gap-4">
+                <Text className="text-secondary-400 text-lg font-fira-code">
+                  move file
+                </Text>
+                <SelectInput
+                  options={albums
+                    .filter((a) => a.id !== albumId)
+                    .map((a) => ({ label: a.name, value: a.id }))}
+                  value={moveAlbumId}
+                  onValueChange={setMoveAlbumId}
+                  placeholder="album"
+                  className="w-full"
+                />
+                <View className="flex-row items-center justify-end gap-3">
+                  <TouchableOpacity
+                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                    onPress={() => setFileActionMode("menu")}
+                    disabled={isApplyingAction}
+                  >
+                    <Text className="text-secondary font-fira-code">back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                    onPress={handleSubmitMove}
+                    disabled={isApplyingAction}
+                  >
+                    <Text className="text-primary-500 font-fira-code-semibold">
+                      move
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {fileActionMode === "details" && selectedFile && (
+              <View className="p-4 gap-4">
+                <Text className="text-secondary-400 text-lg font-fira-code">
+                  file details
+                </Text>
+
+                <View className="border border-primary-400 rounded-2xl p-3 gap-2 bg-primary-600">
+                  <Text
+                    className="text-base font-fira-code-light"
+                    numberOfLines={2}
+                  >
+                    <Text className="text-secondary-600">name: </Text>
+                    <Text className="text-secondary-200">
+                      {selectedFile.name}
+                    </Text>
+                  </Text>
+                  <Text className="text-base font-fira-code-light">
+                    <Text className="text-secondary-600">type: </Text>
+                    <Text className="text-secondary-200">
+                      {selectedFile.mime}
+                    </Text>
+                  </Text>
+                  <Text className="text-base font-fira-code-light">
+                    <Text className="text-secondary-600">size: </Text>
+                    <Text className="text-secondary-200">
+                      {formatFileSize(selectedFile.size)} ({selectedFile.size}{" "}
+                      B)
+                    </Text>
+                  </Text>
+                  <Text className="text-base font-fira-code-light">
+                    <Text className="text-secondary-600">created: </Text>
+                    <Text className="text-secondary-200">
+                      {formatTimestamp(selectedFile.created_at)}
+                    </Text>
+                  </Text>
+                  <Text className="text-base font-fira-code-light">
+                    <Text className="text-secondary-600">id: </Text>
+                    <Text className="text-secondary-200">
+                      {selectedFile.id}
+                    </Text>
+                  </Text>
+                </View>
+
+                <View className="flex-row items-center justify-end">
+                  <TouchableOpacity
+                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                    onPress={() => setFileActionMode("menu")}
+                  >
+                    <Text className="text-secondary font-fira-code">back</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Viewing Modal */}
       <Modal visible={!!viewingFile} animationType="fade" transparent={false}>

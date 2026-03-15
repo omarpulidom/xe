@@ -10,6 +10,7 @@ import type { GlobalTypedStateCreator } from "./types";
 type VaultState = {
   isUnlocked: boolean;
   masterKey: Uint8Array | null; // MEMORY ONLY — never serialized
+  currentUnlockTime: number | null;
   lastUnlockTime: number | null;
 };
 
@@ -21,6 +22,7 @@ type VaultActions = {
 const initialState: VaultState = {
   isUnlocked: false,
   masterKey: null,
+  currentUnlockTime: null,
   lastUnlockTime: null,
 };
 
@@ -35,7 +37,10 @@ export const createVaultSlice: GlobalTypedStateCreator<VaultSlice> = (set) => ({
         ...state.vault,
         isUnlocked: true,
         masterKey,
-        lastUnlockTime: Date.now(),
+        // Shift current unlock to previous, then set new current unlock.
+        lastUnlockTime:
+          state.vault.currentUnlockTime ?? state.vault.lastUnlockTime,
+        currentUnlockTime: Date.now(),
       },
     })),
 

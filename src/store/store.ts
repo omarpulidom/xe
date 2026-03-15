@@ -7,10 +7,13 @@ import type { GlobalStoreType } from "./types";
 const MAIN_STORE_NAME_PERSIST = "zustand-main-stores";
 
 /**
- * Only persist lastUnlockTime from vault.
+ * Persist unlock timestamps from vault.
  * CRITICAL: masterKey is NEVER persisted — only exists in RAM.
  */
-type PersistedVaultState = Pick<GlobalStoreType["vault"], "lastUnlockTime">;
+type PersistedVaultState = Pick<
+  GlobalStoreType["vault"],
+  "currentUnlockTime" | "lastUnlockTime"
+>;
 
 type PersistedState = {
   vault: PersistedVaultState;
@@ -27,6 +30,7 @@ export const useGlobalStore = create<GlobalStoreType>()(
       partialize(state): PersistedState {
         return {
           vault: {
+            currentUnlockTime: state.vault.currentUnlockTime,
             lastUnlockTime: state.vault.lastUnlockTime,
             // NOTE: masterKey is intentionally excluded — never touches disk
           },
@@ -42,6 +46,9 @@ export const useGlobalStore = create<GlobalStoreType>()(
           ...currentState,
           vault: {
             ...currentState.vault,
+            currentUnlockTime:
+              persisted?.vault?.currentUnlockTime ??
+              currentState.vault.currentUnlockTime,
             lastUnlockTime:
               persisted?.vault?.lastUnlockTime ??
               currentState.vault.lastUnlockTime,

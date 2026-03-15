@@ -65,7 +65,7 @@ type VaultContextValue = {
   lockedUntil: number | null;
   /** Whether the vault is currently in lockout */
   isLockedOut: boolean;
-  /** Last successful unlock timestamp */
+  /** Previous successful unlock timestamp (login before current session) */
   lastUnlockTime: number | null;
   /** Set up vault for the first time with a PIN */
   setup: (pin: string) => Promise<void>;

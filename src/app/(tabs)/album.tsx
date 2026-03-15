@@ -21,11 +21,17 @@ import {
   renameFile,
   moveFileToAlbum,
   getAlbums,
+  readExportPackage,
+  importExportPackageToAlbum,
+  createPlainExportFilePackage,
+  createEncryptedExportFilePackage,
+  getRecipientContacts,
+  type RecipientContact,
   type VaultFile,
   type AlbumWithCount,
 } from "@/lib/vault";
 import { useVault } from "@/components/Providers/VaultProvider";
-import { Alert, Modal, Image, ActivityIndicator } from "react-native";
+import { Alert, Modal, Image, ActivityIndicator, Share } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { WebView } from "react-native-webview";
@@ -97,7 +103,7 @@ export default function AlbumTab() {
   const [sortValue, setSortValue] = useState<string | null>(null);
   const [files, setFiles] = useState<VaultFile[]>([]);
   const [albums, setAlbums] = useState<AlbumWithCount[]>([]);
-  const { addFileToAlbum, decryptFileToCache } = useVault();
+  const { addFileToAlbum, decryptFileToCache, getMasterKey } = useVault();
   const insets = useSafeAreaInsets();
 
   // Viewing state
@@ -107,10 +113,27 @@ export default function AlbumTab() {
   } | null>(null);
   const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null);
   const [fileActionMode, setFileActionMode] = useState<
-    "menu" | "rename" | "move" | "details" | null
+    "menu" | "rename" | "move" | "details" | "exportEncrypted" | null
   >(null);
   const [renameValue, setRenameValue] = useState("");
   const [moveAlbumId, setMoveAlbumId] = useState("");
+  const [exportPassphrase, setExportPassphrase] = useState("");
+  const [exportPassphraseConfirm, setExportPassphraseConfirm] = useState("");
+  const [recipientContacts, setRecipientContacts] = useState<
+    RecipientContact[]
+  >([]);
+  const [selectedRecipientId, setSelectedRecipientId] = useState("");
+  const [pendingImportPath, setPendingImportPath] = useState<string | null>(
+    null,
+  );
+  const [pendingImportName, setPendingImportName] = useState<string | null>(
+    null,
+  );
+  const [pendingImportScope, setPendingImportScope] = useState<
+    "file" | "album" | null
+  >(null);
+  const [importPassphrase, setImportPassphrase] = useState("");
+  const [isImportingPackage, setIsImportingPackage] = useState(false);
   const [isApplyingAction, setIsApplyingAction] = useState(false);
   const [decryptingFileId, setDecryptingFileId] = useState<string | null>(null);
   const [addingFiles, setAddingFiles] = useState(false);
@@ -137,6 +160,14 @@ export default function AlbumTab() {
       console.error("[AlbumTab] loadAlbums error:", err);
     }
   }, []);
+
+  const loadRecipientContacts = useCallback(() => {
+    const contacts = getRecipientContacts();
+    setRecipientContacts(contacts);
+    if (contacts.length > 0 && !selectedRecipientId) {
+      setSelectedRecipientId(contacts[0].id);
+    }
+  }, [selectedRecipientId]);
 
   const handleAddMedia = useCallback(async () => {
     try {
@@ -190,13 +221,121 @@ export default function AlbumTab() {
     }
   }, [albumId, addFileToAlbum, loadFiles]);
 
+  const closeImportModal = useCallback(() => {
+    setPendingImportPath(null);
+    setPendingImportName(null);
+    setPendingImportScope(null);
+    setImportPassphrase("");
+    setIsImportingPackage(false);
+  }, []);
+
+  const handleImportPackage = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const pickedPath = result.assets[0].uri.replace("file://", "");
+      const pkg = await readExportPackage(pickedPath);
+
+      if (pkg.mode === "plain") {
+        setAddingFiles(true);
+        const resultImport = await importExportPackageToAlbum({
+          packagePathOrUri: pickedPath,
+          albumId,
+          addFileToAlbum,
+        });
+        await loadFiles();
+        if (resultImport.importedCount === 1) {
+          Alert.alert("Import", `Imported "${resultImport.label}"`);
+        } else {
+          Alert.alert(
+            "Import",
+            `Imported ${resultImport.importedCount} files from album "${resultImport.label}"`,
+          );
+        }
+        return;
+      }
+
+      setPendingImportPath(pickedPath);
+      setPendingImportScope(pkg.scope);
+      setPendingImportName(
+        pkg.scope === "file" ? pkg.file.name : pkg.album.name,
+      );
+    } catch (err) {
+      console.error("[AlbumTab] import package error:", err);
+      Alert.alert("Import", "Could not import package.");
+    } finally {
+      setAddingFiles(false);
+    }
+  }, [albumId, addFileToAlbum, loadFiles]);
+
+  const handleSubmitEncryptedImport = useCallback(async () => {
+    if (!pendingImportPath) return;
+
+    const passphrase = importPassphrase.trim();
+    if (passphrase.length < 6) {
+      Alert.alert("Import", "Passphrase must be at least 6 characters.");
+      return;
+    }
+
+    try {
+      setIsImportingPackage(true);
+      const resultImport = await importExportPackageToAlbum({
+        packagePathOrUri: pendingImportPath,
+        albumId,
+        passphrase,
+        addFileToAlbum,
+      });
+      await loadFiles();
+      closeImportModal();
+      if (resultImport.importedCount === 1) {
+        Alert.alert("Import", `Imported "${resultImport.label}"`);
+      } else {
+        Alert.alert(
+          "Import",
+          `Imported ${resultImport.importedCount} files from album "${resultImport.label}"`,
+        );
+      }
+    } catch (err) {
+      console.error("[AlbumTab] encrypted import error:", err);
+      const message = err instanceof Error ? err.message : "Import failed";
+      if (message.toLowerCase().includes("passphrase")) {
+        Alert.alert("Import", "Wrong passphrase.");
+      } else if (message.toLowerCase().includes("unauthorized")) {
+        Alert.alert(
+          "Import",
+          "This package was not authorized for this device.",
+        );
+      } else {
+        Alert.alert("Import", "Could not import encrypted package.");
+      }
+    } finally {
+      setIsImportingPackage(false);
+    }
+  }, [
+    pendingImportPath,
+    importPassphrase,
+    albumId,
+    addFileToAlbum,
+    loadFiles,
+    closeImportModal,
+  ]);
+
   const handleAddFiles = useCallback(() => {
     Alert.alert("Add files", "What do you want to import?", [
       { text: "Photos & Videos", onPress: handleAddMedia },
       { text: "Documents", onPress: handleAddDocuments },
+      { text: "Calc Package (.calcx)", onPress: handleImportPackage },
       { text: "Cancel", style: "cancel" },
     ]);
-  }, [handleAddMedia, handleAddDocuments]);
+  }, [handleAddMedia, handleAddDocuments, handleImportPackage]);
 
   const handleViewFile = useCallback(
     async (file: VaultFile) => {
@@ -246,8 +385,15 @@ export default function AlbumTab() {
     setSelectedFile(null);
     setRenameValue("");
     setMoveAlbumId("");
+    setExportPassphrase("");
+    setExportPassphraseConfirm("");
+    if (recipientContacts.length > 0) {
+      setSelectedRecipientId(recipientContacts[0].id);
+    } else {
+      setSelectedRecipientId("");
+    }
     setIsApplyingAction(false);
-  }, []);
+  }, [recipientContacts]);
 
   const openFileActions = useCallback((file: VaultFile) => {
     setSelectedFile(file);
@@ -317,10 +463,106 @@ export default function AlbumTab() {
     handleDeleteFile(fileId, fileName);
   }, [selectedFile, closeFileActions, handleDeleteFile]);
 
+  const handleExportPlainFromMenu = useCallback(async () => {
+    if (!selectedFile) return;
+
+    try {
+      setIsApplyingAction(true);
+      const decryptedFilePath = await decryptFileToCache(selectedFile.id);
+      if (!decryptedFilePath) {
+        Alert.alert("Export", "Could not decrypt file for export.");
+        return;
+      }
+
+      const packageUri = await createPlainExportFilePackage({
+        file: selectedFile,
+        decryptedFilePath,
+      });
+
+      closeFileActions();
+      await Share.share({
+        url: packageUri,
+        title: "Export file",
+        message: "Calc export package",
+      });
+    } catch (err) {
+      console.error("[AlbumTab] plain export error:", err);
+      Alert.alert("Export", "Could not export plain file.");
+    } finally {
+      setIsApplyingAction(false);
+    }
+  }, [selectedFile, decryptFileToCache, closeFileActions]);
+
+  const handleExportEncryptedFromMenu = useCallback(async () => {
+    if (!selectedFile) return;
+
+    const passphrase = exportPassphrase.trim();
+    if (passphrase.length < 6) {
+      Alert.alert(
+        "Encrypted Export",
+        "Passphrase must be at least 6 characters.",
+      );
+      return;
+    }
+    if (passphrase !== exportPassphraseConfirm.trim()) {
+      Alert.alert("Encrypted Export", "Passphrases do not match.");
+      return;
+    }
+
+    const recipient = recipientContacts.find(
+      (c) => c.id === selectedRecipientId,
+    );
+    if (!recipient) {
+      Alert.alert("Encrypted Export", "Select a recipient contact.");
+      return;
+    }
+
+    const masterKey = getMasterKey();
+    if (!masterKey) {
+      Alert.alert("Encrypted Export", "Vault is locked.");
+      return;
+    }
+
+    try {
+      setIsApplyingAction(true);
+      const packageUri = await createEncryptedExportFilePackage({
+        file: selectedFile,
+        masterKey,
+        passphrase,
+        recipient: {
+          id: recipient.id,
+          name: recipient.name,
+          publicKeyPem: recipient.publicKeyPem,
+        },
+      });
+
+      closeFileActions();
+      await Share.share({
+        url: packageUri,
+        title: "Encrypted export",
+        message: "Calc encrypted export package",
+      });
+    } catch (err) {
+      console.error("[AlbumTab] encrypted export error:", err);
+      Alert.alert("Encrypted Export", "Could not export encrypted package.");
+    } finally {
+      setIsApplyingAction(false);
+    }
+  }, [
+    selectedFile,
+    exportPassphrase,
+    exportPassphraseConfirm,
+    recipientContacts,
+    selectedRecipientId,
+    getMasterKey,
+    closeFileActions,
+  ]);
+
   useEffect(() => {
     loadFiles();
     loadAlbums();
-  }, [loadFiles, loadAlbums]);
+    loadRecipientContacts();
+  }, [loadFiles, loadAlbums, loadRecipientContacts]);
 
   const filteredFiles = useMemo(() => {
     let result = [...files];
@@ -488,6 +730,7 @@ export default function AlbumTab() {
                 <TouchableOpacity
                   className="px-4 py-4 border-b border-primary-400"
                   onPress={() => setFileActionMode("rename")}
+                  disabled={isApplyingAction}
                   activeOpacity={0.7}
                 >
                   <Text className="text-secondary-400 text-lg font-fira-code">
@@ -498,6 +741,7 @@ export default function AlbumTab() {
                 <TouchableOpacity
                   className="px-4 py-4 border-b border-primary-400"
                   onPress={handleOpenMove}
+                  disabled={isApplyingAction}
                   activeOpacity={0.7}
                 >
                   <Text className="text-secondary-400 text-lg font-fira-code">
@@ -508,6 +752,7 @@ export default function AlbumTab() {
                 <TouchableOpacity
                   className="px-4 py-4 border-b border-primary-400"
                   onPress={() => setFileActionMode("details")}
+                  disabled={isApplyingAction}
                   activeOpacity={0.7}
                 >
                   <Text className="text-secondary-400 text-lg font-fira-code">
@@ -517,7 +762,30 @@ export default function AlbumTab() {
 
                 <TouchableOpacity
                   className="px-4 py-4 border-b border-primary-400"
+                  onPress={handleExportPlainFromMenu}
+                  disabled={isApplyingAction}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    export_plain
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="px-4 py-4 border-b border-primary-400"
+                  onPress={() => setFileActionMode("exportEncrypted")}
+                  disabled={isApplyingAction}
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    export_encrypted
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="px-4 py-4 border-b border-primary-400"
                   onPress={handleDeleteFromMenu}
+                  disabled={isApplyingAction}
                   activeOpacity={0.7}
                 >
                   <Text className="text-red-300 text-lg font-fira-code">
@@ -528,6 +796,7 @@ export default function AlbumTab() {
                 <TouchableOpacity
                   className="px-4 py-4"
                   onPress={closeFileActions}
+                  disabled={isApplyingAction}
                   activeOpacity={0.7}
                 >
                   <Text className="text-primary-100 text-lg font-fira-code">
@@ -660,6 +929,128 @@ export default function AlbumTab() {
                 </View>
               </View>
             )}
+
+            {fileActionMode === "exportEncrypted" && selectedFile && (
+              <View className="p-4 gap-4">
+                <Text className="text-secondary-400 text-lg font-fira-code">
+                  encrypted export
+                </Text>
+                <Text className="text-secondary-600 text-base font-fira-code-light">
+                  This passphrase will be required on import.
+                </Text>
+                <SelectInput
+                  options={recipientContacts.map((recipient) => ({
+                    label: recipient.name,
+                    value: recipient.id,
+                  }))}
+                  value={selectedRecipientId}
+                  onValueChange={setSelectedRecipientId}
+                  placeholder="recipient"
+                  className="w-full"
+                />
+                <TextInput
+                  value={exportPassphrase}
+                  onChangeText={setExportPassphrase}
+                  placeholder="passphrase"
+                  placeholderTextColor={Colors.primary[100]}
+                  secureTextEntry
+                  autoFocus
+                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                />
+                <TextInput
+                  value={exportPassphraseConfirm}
+                  onChangeText={setExportPassphraseConfirm}
+                  placeholder="confirm passphrase"
+                  placeholderTextColor={Colors.primary[100]}
+                  secureTextEntry
+                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                  onSubmitEditing={handleExportEncryptedFromMenu}
+                />
+                <View className="flex-row items-center justify-end gap-3">
+                  <TouchableOpacity
+                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                    onPress={() => setFileActionMode("menu")}
+                    disabled={isApplyingAction}
+                  >
+                    <Text className="text-secondary font-fira-code">back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                    onPress={handleExportEncryptedFromMenu}
+                    disabled={isApplyingAction}
+                  >
+                    {isApplyingAction ? (
+                      <ActivityIndicator color={Colors.primary[500]} />
+                    ) : (
+                      <Text className="text-primary-500 font-fira-code-semibold">
+                        export
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={!!pendingImportPath}
+        transparent
+        animationType="fade"
+        onRequestClose={closeImportModal}
+      >
+        <Pressable
+          className="flex-1 items-center justify-center px-8"
+          style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
+          onPress={closeImportModal}
+        >
+          <Pressable
+            className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl p-4 gap-4"
+            onPress={() => {}}
+          >
+            <Text className="text-secondary-400 text-lg font-fira-code">
+              encrypted import
+            </Text>
+            <Text className="text-secondary-600 text-base font-fira-code-light">
+              {pendingImportName
+                ? pendingImportScope === "album"
+                  ? `Album package: ${pendingImportName}`
+                  : `File package: ${pendingImportName}`
+                : "Enter passphrase to import this package."}
+            </Text>
+            <TextInput
+              value={importPassphrase}
+              onChangeText={setImportPassphrase}
+              placeholder="passphrase"
+              placeholderTextColor={Colors.primary[100]}
+              secureTextEntry
+              autoFocus
+              className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+              onSubmitEditing={handleSubmitEncryptedImport}
+            />
+            <View className="flex-row items-center justify-end gap-3">
+              <TouchableOpacity
+                className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                onPress={closeImportModal}
+                disabled={isImportingPackage}
+              >
+                <Text className="text-secondary font-fira-code">cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                onPress={handleSubmitEncryptedImport}
+                disabled={isImportingPackage}
+              >
+                {isImportingPackage ? (
+                  <ActivityIndicator color={Colors.primary[500]} />
+                ) : (
+                  <Text className="text-primary-500 font-fira-code-semibold">
+                    import
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>

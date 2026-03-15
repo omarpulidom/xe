@@ -4,10 +4,7 @@
     "slug": "calc",
     "version": "0.0.1",
     "scheme": "com.pm.calc",
-    "platforms": [
-      "ios",
-      "android"
-    ],
+    "platforms": ["ios", "android"],
     "plugins": [
       "expo-dev-client",
       "expo-router",
@@ -15,9 +12,7 @@
       [
         "expo-asset",
         {
-          "assets": [
-            "./src/assets/images"
-          ]
+          "assets": ["./src/assets/images"]
         }
       ],
       [
@@ -44,14 +39,30 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pm.calc",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Calc Export Package",
+            "CFBundleTypeRole": "Editor",
+            "LSItemContentTypes": ["com.pm.calc.calcx"]
+          }
+        ],
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "com.pm.calc.calcx",
+            "UTTypeDescription": "Calc Export Package",
+            "UTTypeConformsTo": ["public.data"],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": ["calcx"],
+              "public.mime-type": "application/x-calcx"
+            }
+          }
+        ]
       },
       "buildNumber": "1",
       "appleTeamId": "C5TXZNQR66"
@@ -62,7 +73,23 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.pm.calc",
-      "versionCode": 1
+      "versionCode": 1,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            {
+              "mimeType": "application/x-calcx"
+            },
+            {
+              "mimeType": "application/octet-stream",
+              "pathPattern": ".*\\.calcx"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "extra": {
       "router": {

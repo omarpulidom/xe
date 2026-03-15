@@ -516,7 +516,10 @@ export default function AlbumTab() {
       (c) => c.id === selectedRecipientId,
     );
     if (!recipient) {
-      Alert.alert("Encrypted Export", "Select a recipient contact.");
+      Alert.alert(
+        "Encrypted Export",
+        "No recipient selected. Add one from Vault first.",
+      );
       return;
     }
 
@@ -969,58 +972,94 @@ export default function AlbumTab() {
                   <Text className="text-secondary-600 text-base font-fira-code-light">
                     This passphrase will be required on import.
                   </Text>
-                  <SelectInput
-                    options={recipientContacts.map((recipient) => ({
-                      label: recipient.name,
-                      value: recipient.id,
-                    }))}
-                    value={selectedRecipientId}
-                    onValueChange={setSelectedRecipientId}
-                    placeholder="recipient"
-                    className="w-full"
-                  />
-                  <TextInput
-                    value={exportPassphrase}
-                    onChangeText={setExportPassphrase}
-                    placeholder="passphrase"
-                    placeholderTextColor={Colors.primary[100]}
-                    secureTextEntry
-                    autoFocus
-                    className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-                  />
-                  <TextInput
-                    value={exportPassphraseConfirm}
-                    onChangeText={setExportPassphraseConfirm}
-                    placeholder="confirm passphrase"
-                    placeholderTextColor={Colors.primary[100]}
-                    secureTextEntry
-                    className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-                    onSubmitEditing={handleExportEncryptedFromMenu}
-                  />
-                  <View className="flex-row items-center justify-end gap-3">
-                    <TouchableOpacity
-                      className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                      onPress={() => setFileActionMode("menu")}
-                      disabled={isApplyingAction}
-                    >
-                      <Text className="text-secondary font-fira-code">
-                        back
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
-                      onPress={handleExportEncryptedFromMenu}
-                      disabled={isApplyingAction}
-                    >
-                      {isApplyingAction ? (
-                        <ActivityIndicator color={Colors.primary[500]} />
-                      ) : (
-                        <Text className="text-primary-500 font-fira-code-semibold">
-                          export
+                  {recipientContacts.length === 0 ? (
+                    <>
+                      <View className="rounded-2xl border border-primary-400 bg-primary-600/70 p-4 gap-2">
+                        <Text className="text-secondary font-fira-code-semibold">
+                          no recipients yet
                         </Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
+                        <Text className="text-secondary-600 font-fira-code-light text-sm">
+                          Add a recipient in Vault to enable encrypted export.
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center justify-end gap-3">
+                        <TouchableOpacity
+                          className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                          onPress={() => setFileActionMode("menu")}
+                        >
+                          <Text className="text-secondary font-fira-code">
+                            back
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                          onPress={() => {
+                            closeFileActions();
+                            router.push("/(tabs)/vault");
+                          }}
+                        >
+                          <Text className="text-primary-500 font-fira-code-semibold">
+                            go_vault
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <SelectInput
+                        options={recipientContacts.map((recipient) => ({
+                          label: recipient.name,
+                          value: recipient.id,
+                        }))}
+                        value={selectedRecipientId}
+                        onValueChange={setSelectedRecipientId}
+                        placeholder="recipient"
+                        className="w-full"
+                      />
+                      <TextInput
+                        value={exportPassphrase}
+                        onChangeText={setExportPassphrase}
+                        placeholder="passphrase"
+                        placeholderTextColor={Colors.primary[100]}
+                        secureTextEntry
+                        autoFocus
+                        className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                      />
+                      <TextInput
+                        value={exportPassphraseConfirm}
+                        onChangeText={setExportPassphraseConfirm}
+                        placeholder="confirm passphrase"
+                        placeholderTextColor={Colors.primary[100]}
+                        secureTextEntry
+                        className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                        onSubmitEditing={handleExportEncryptedFromMenu}
+                      />
+                      <View className="flex-row items-center justify-end gap-3">
+                        <TouchableOpacity
+                          className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                          onPress={() => setFileActionMode("menu")}
+                          disabled={isApplyingAction}
+                        >
+                          <Text className="text-secondary font-fira-code">
+                            back
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                          onPress={handleExportEncryptedFromMenu}
+                          disabled={isApplyingAction}
+                        >
+                          {isApplyingAction ? (
+                            <ActivityIndicator color={Colors.primary[500]} />
+                          ) : (
+                            <Text className="text-primary-500 font-fira-code-semibold">
+                              export
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
                 </View>
               )}
             </Pressable>

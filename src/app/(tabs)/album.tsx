@@ -4,6 +4,7 @@ import {
   TouchableOpacity,
   TextInput,
   Pressable,
+  ScrollView,
   View,
   useWindowDimensions,
   PanResponder,
@@ -44,6 +45,8 @@ import {
   Platform,
   Animated,
   Easing,
+  LayoutAnimation,
+  UIManager,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -101,11 +104,120 @@ function formatFileSize(size: number): string {
   return `${value >= 10 || power === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[power]}`;
 }
 
+type ImportJobStatus =
+  | "queued"
+  | "copying"
+  | "encrypting"
+  | "saving_db"
+  | "done"
+  | "error";
+
+type ImportJob = {
+  id: string;
+  batchId: string;
+  index: number;
+  total: number;
+  name: string;
+  mime: string;
+  uri: string;
+  status: ImportJobStatus;
+  progress: number;
+  retries: number;
+  errorMessage?: string;
+};
+
+type ImportBatch = {
+  id: string;
+  albumId: string;
+  label: string;
+  createdAt: number;
+  totalJobs: number;
+  doneCount: number;
+  jobs: ImportJob[];
+};
+
+function jobStatusLabel(status: ImportJobStatus): string {
+  if (status === "saving_db") return "saving_db";
+  return status;
+}
+
+function stageColor(status: ImportJobStatus): string {
+  if (status === "done") return Colors.secondary[500];
+  if (status === "error") return "#f87171";
+  return Colors.secondary[400];
+}
+
+function stageProgressByStatus(status: ImportJobStatus): number {
+  if (status === "queued") return 0;
+  if (status === "copying") return 0.15;
+  if (status === "encrypting") return 0.8;
+  if (status === "saving_db") return 0.95;
+  if (status === "done") return 1;
+  return 0;
+}
+
 function VideoFilePlayer({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, (p) => {
     p.play();
   });
-  return <VideoView player={player} style={{ flex: 1 }} contentFit="contain" />;
+  return (
+    <View style={{ width: "100%", height: "100%" }}>
+      <VideoView
+        player={player}
+        style={{ width: "100%", height: "100%" }}
+        contentFit="contain"
+      />
+    </View>
+  );
+}
+
+function SmoothProgressBar({
+  progress,
+  fillColor,
+  height,
+  backgroundColor,
+}: {
+  progress: number;
+  fillColor: string;
+  height: number;
+  backgroundColor: string;
+}) {
+  const [trackWidth, setTrackWidth] = useState(0);
+  const animated = useRef(new Animated.Value(progress)).current;
+
+  useEffect(() => {
+    Animated.timing(animated, {
+      toValue: Math.max(0, Math.min(1, progress)),
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [animated, progress]);
+
+  const barWidth = animated.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, trackWidth || 1],
+  });
+
+  return (
+    <View
+      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+      style={{
+        height,
+        borderRadius: height / 2,
+        overflow: "hidden",
+        backgroundColor,
+      }}
+    >
+      <Animated.View
+        style={{
+          height: "100%",
+          width: barWidth,
+          backgroundColor: fillColor,
+        }}
+      />
+    </View>
+  );
 }
 
 export default function AlbumTab() {
@@ -154,6 +266,9 @@ export default function AlbumTab() {
   const [pendingImportScope, setPendingImportScope] = useState<
     "file" | "album" | null
   >(null);
+  const [pendingImportEntries, setPendingImportEntries] = useState<
+    Array<{ name: string; mime: string }>
+  >([]);
   const [importPassphrase, setImportPassphrase] = useState("");
   const [isImportingPackage, setIsImportingPackage] = useState(false);
   const [isApplyingAction, setIsApplyingAction] = useState(false);
@@ -175,8 +290,14 @@ export default function AlbumTab() {
   });
   const menuButtonRef = useRef<View>(null);
   const galleryRef = useRef<FlatList<VaultFile>>(null);
+  const importBatchesRef = useRef<ImportBatch[]>([]);
+  const dismissBatchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const viewerChromeAnim = useRef(new Animated.Value(1)).current;
   const viewerTranslateY = useRef(new Animated.Value(0)).current;
+  const [importBatches, setImportBatches] = useState<ImportBatch[]>([]);
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
 
   const { width, height } = useWindowDimensions();
   // px-8 = 32px each side (64 total), gap between columns = 12
@@ -186,11 +307,6 @@ export default function AlbumTab() {
   const viewerBackdropOpacity = viewerTranslateY.interpolate({
     inputRange: [0, height * 0.75],
     outputRange: [1, 0],
-    extrapolate: "clamp",
-  });
-  const viewerScale = viewerTranslateY.interpolate({
-    inputRange: [0, height * 0.75],
-    outputRange: [1, 0.92],
     extrapolate: "clamp",
   });
 
@@ -221,6 +337,280 @@ export default function AlbumTab() {
     }
   }, [selectedRecipientId]);
 
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      UIManager.setLayoutAnimationEnabledExperimental?.(true);
+    }
+  }, []);
+
+  const animateLayout = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  }, []);
+
+  const flushUIFrame = useCallback(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    [],
+  );
+
+  useEffect(() => {
+    importBatchesRef.current = importBatches;
+  }, [importBatches]);
+
+  const updateImportJob = useCallback(
+    (batchId: string, jobId: string, patch: Partial<ImportJob>) => {
+      setImportBatches((prev) =>
+        prev.map((batch) => {
+          if (batch.id !== batchId) return batch;
+          return {
+            ...batch,
+            jobs: batch.jobs.map((job) =>
+              job.id === jobId ? { ...job, ...patch } : job,
+            ),
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  const createImportBatch = useCallback(
+    (
+      label: string,
+      entries: Array<{ uri: string; name: string; mime: string }>,
+    ): { batchId: string; jobs: ImportJob[] } => {
+      const batchId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const jobs: ImportJob[] = entries.map((entry, index) => ({
+        id: `${batchId}_${index}`,
+        batchId,
+        index,
+        total: entries.length,
+        name: entry.name,
+        mime: entry.mime,
+        uri: entry.uri,
+        status: "queued",
+        progress: 0,
+        retries: 0,
+      }));
+
+      setImportBatches((prev) => {
+        const next: ImportBatch = {
+          id: batchId,
+          albumId,
+          label,
+          createdAt: Date.now(),
+          totalJobs: entries.length,
+          doneCount: 0,
+          jobs,
+        };
+        return [next, ...prev].slice(0, 8);
+      });
+      setActiveBatchId(batchId);
+
+      return { batchId, jobs };
+    },
+    [albumId],
+  );
+
+  const completeImportJob = useCallback(
+    (batchId: string, jobId: string) => {
+      animateLayout();
+      setImportBatches((prev) =>
+        prev.map((batch) => {
+          if (batch.id !== batchId) return batch;
+          const exists = batch.jobs.some((job) => job.id === jobId);
+          if (!exists) return batch;
+          return {
+            ...batch,
+            doneCount: batch.doneCount + 1,
+            jobs: batch.jobs.filter((job) => job.id !== jobId),
+          };
+        }),
+      );
+    },
+    [animateLayout],
+  );
+
+  const runImportJob = useCallback(
+    async (batchId: string, job: ImportJob) => {
+      updateImportJob(batchId, job.id, {
+        status: "copying",
+        progress: stageProgressByStatus("copying"),
+        errorMessage: undefined,
+      });
+
+      try {
+        updateImportJob(batchId, job.id, {
+          status: "encrypting",
+          progress: stageProgressByStatus("encrypting"),
+        });
+
+        await addFileToAlbum(albumId, job.uri, job.mime, job.name);
+
+        updateImportJob(batchId, job.id, {
+          status: "saving_db",
+          progress: stageProgressByStatus("saving_db"),
+        });
+
+        await loadFiles();
+        completeImportJob(batchId, job.id);
+      } catch (err) {
+        updateImportJob(batchId, job.id, {
+          status: "error",
+          progress: stageProgressByStatus("encrypting"),
+          errorMessage: err instanceof Error ? err.message : "Import failed",
+        });
+      }
+    },
+    [addFileToAlbum, albumId, completeImportJob, loadFiles, updateImportJob],
+  );
+
+  const importEntriesAsBatch = useCallback(
+    async (
+      label: string,
+      entries: Array<{ uri: string; name: string; mime: string }>,
+    ) => {
+      if (entries.length === 0) return;
+      const { batchId, jobs } = createImportBatch(label, entries);
+
+      setAddingFiles(true);
+      try {
+        await flushUIFrame();
+        for (const job of jobs) {
+          await runImportJob(batchId, job);
+        }
+      } finally {
+        setAddingFiles(false);
+      }
+    },
+    [createImportBatch, flushUIFrame, runImportJob],
+  );
+
+  const importPackageAsBatch = useCallback(
+    async (
+      label: string,
+      entries: Array<{ name: string; mime: string }>,
+      execute: (
+        trackedAdd: (
+          albumId: string,
+          plainUri: string,
+          mime: string,
+          name: string,
+        ) => Promise<void>,
+      ) => Promise<void>,
+    ) => {
+      const batchEntries = entries.map((entry) => ({
+        ...entry,
+        uri: "",
+      }));
+      const { batchId, jobs } = createImportBatch(label, batchEntries);
+      let cursor = 0;
+
+      const trackedAdd = async (
+        targetAlbumId: string,
+        plainUri: string,
+        mime: string,
+        name: string,
+      ) => {
+        const job =
+          jobs[cursor] ??
+          jobs.find((item) => item.status === "queued") ??
+          jobs[jobs.length - 1];
+        cursor += 1;
+
+        updateImportJob(batchId, job.id, {
+          status: "copying",
+          progress: stageProgressByStatus("copying"),
+          errorMessage: undefined,
+        });
+
+        try {
+          updateImportJob(batchId, job.id, {
+            status: "encrypting",
+            progress: stageProgressByStatus("encrypting"),
+          });
+
+          await addFileToAlbum(targetAlbumId, plainUri, mime, name);
+
+          updateImportJob(batchId, job.id, {
+            status: "saving_db",
+            progress: stageProgressByStatus("saving_db"),
+          });
+
+          await loadFiles();
+          completeImportJob(batchId, job.id);
+        } catch (err) {
+          updateImportJob(batchId, job.id, {
+            status: "error",
+            progress: stageProgressByStatus("encrypting"),
+            errorMessage: err instanceof Error ? err.message : "Import failed",
+            name,
+            mime,
+          });
+          throw err;
+        }
+      };
+
+      setAddingFiles(true);
+      try {
+        await flushUIFrame();
+        await execute(trackedAdd);
+      } finally {
+        setAddingFiles(false);
+      }
+    },
+    [
+      addFileToAlbum,
+      completeImportJob,
+      createImportBatch,
+      flushUIFrame,
+      loadFiles,
+      updateImportJob,
+    ],
+  );
+
+  const retryImportJob = useCallback(
+    async (batchId: string, jobId: string) => {
+      const batch = importBatchesRef.current.find(
+        (item) => item.id === batchId,
+      );
+      const job = batch?.jobs.find((item) => item.id === jobId);
+      if (!job) return;
+      if (!job.uri) {
+        Alert.alert(
+          "Import",
+          "This failed item cannot be retried individually.",
+        );
+        return;
+      }
+
+      animateLayout();
+      updateImportJob(batchId, job.id, {
+        status: "queued",
+        progress: 0,
+        errorMessage: undefined,
+        retries: job.retries + 1,
+      });
+
+      setAddingFiles(true);
+      try {
+        await runImportJob(batchId, { ...job, retries: job.retries + 1 });
+      } finally {
+        setAddingFiles(false);
+      }
+    },
+    [animateLayout, runImportJob, updateImportJob],
+  );
+
+  const clearImportBatch = useCallback(
+    (batchId: string) => {
+      animateLayout();
+      setImportBatches((prev) => prev.filter((batch) => batch.id !== batchId));
+      setActiveBatchId((prev) => (prev === batchId ? null : prev));
+    },
+    [animateLayout],
+  );
+
   const handleAddMedia = useCallback(async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -230,14 +620,12 @@ export default function AlbumTab() {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setAddingFiles(true);
-        for (const asset of result.assets) {
-          const mime = asset.type === "video" ? "video/mp4" : "image/jpeg";
-          const name = asset.fileName || `file_${Date.now()}`;
-          const uri = asset.uri.replace("file://", "");
-          await addFileToAlbum(albumId, uri, mime, name);
-        }
-        await loadFiles();
+        const entries = result.assets.map((asset, index) => ({
+          mime: asset.type === "video" ? "video/mp4" : "image/jpeg",
+          name: asset.fileName || `media_${Date.now()}_${index + 1}`,
+          uri: asset.uri.replace("file://", ""),
+        }));
+        await importEntriesAsBatch("media_import", entries);
       }
     } catch (err) {
       console.error("[AlbumTab] pick media error:", err);
@@ -245,7 +633,7 @@ export default function AlbumTab() {
     } finally {
       setAddingFiles(false);
     }
-  }, [albumId, addFileToAlbum, loadFiles]);
+  }, [importEntriesAsBatch]);
 
   const handleAddDocuments = useCallback(async () => {
     try {
@@ -256,14 +644,12 @@ export default function AlbumTab() {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setAddingFiles(true);
-        for (const asset of result.assets) {
-          const mime = asset.mimeType ?? "application/octet-stream";
-          const name = asset.name ?? `doc_${Date.now()}`;
-          const uri = asset.uri.replace("file://", "");
-          await addFileToAlbum(albumId, uri, mime, name);
-        }
-        await loadFiles();
+        const entries = result.assets.map((asset, index) => ({
+          mime: asset.mimeType ?? "application/octet-stream",
+          name: asset.name ?? `doc_${Date.now()}_${index + 1}`,
+          uri: asset.uri.replace("file://", ""),
+        }));
+        await importEntriesAsBatch("documents_import", entries);
       }
     } catch (err) {
       console.error("[AlbumTab] pick documents error:", err);
@@ -271,12 +657,13 @@ export default function AlbumTab() {
     } finally {
       setAddingFiles(false);
     }
-  }, [albumId, addFileToAlbum, loadFiles]);
+  }, [importEntriesAsBatch]);
 
   const closeImportModal = useCallback(() => {
     setPendingImportPath(null);
     setPendingImportName(null);
     setPendingImportScope(null);
+    setPendingImportEntries([]);
     setImportPassphrase("");
     setIsImportingPackage(false);
   }, []);
@@ -296,14 +683,39 @@ export default function AlbumTab() {
       const pickedPath = result.assets[0].uri.replace("file://", "");
       const pkg = await readExportPackage(pickedPath);
 
+      const pkgEntries =
+        pkg.scope === "file"
+          ? [
+              {
+                name: pkg.file.name,
+                mime: pkg.file.mime,
+              },
+            ]
+          : pkg.files.map((entry) => ({
+              name: entry.meta.name,
+              mime: entry.meta.mime,
+            }));
+
       if (pkg.mode === "plain") {
-        setAddingFiles(true);
-        const resultImport = await importExportPackageToAlbum({
-          packagePathOrUri: pickedPath,
-          albumId,
-          addFileToAlbum,
-        });
-        await loadFiles();
+        await importPackageAsBatch(
+          pkg.scope === "album"
+            ? `${pkg.album.name}_package`
+            : `${pkg.file.name}_package`,
+          pkgEntries,
+          async (trackedAdd) => {
+            await importExportPackageToAlbum({
+              packagePathOrUri: pickedPath,
+              albumId,
+              addFileToAlbum: trackedAdd,
+            });
+          },
+        );
+
+        const resultImport = {
+          importedCount: pkgEntries.length,
+          label: pkg.scope === "file" ? pkg.file.name : pkg.album.name,
+        };
+
         if (resultImport.importedCount === 1) {
           Alert.alert("Import", `Imported "${resultImport.label}"`);
         } else {
@@ -320,13 +732,14 @@ export default function AlbumTab() {
       setPendingImportName(
         pkg.scope === "file" ? pkg.file.name : pkg.album.name,
       );
+      setPendingImportEntries(pkgEntries);
     } catch (err) {
       console.error("[AlbumTab] import package error:", err);
       Alert.alert("Import", "Could not import package.");
     } finally {
       setAddingFiles(false);
     }
-  }, [albumId, addFileToAlbum, loadFiles]);
+  }, [albumId, importPackageAsBatch]);
 
   const handleSubmitEncryptedImport = useCallback(async () => {
     if (!pendingImportPath) return;
@@ -339,13 +752,27 @@ export default function AlbumTab() {
 
     try {
       setIsImportingPackage(true);
-      const resultImport = await importExportPackageToAlbum({
-        packagePathOrUri: pendingImportPath,
-        albumId,
-        passphrase,
-        addFileToAlbum,
-      });
-      await loadFiles();
+
+      await importPackageAsBatch(
+        pendingImportName
+          ? `${pendingImportName}_encrypted_package`
+          : "encrypted_package",
+        pendingImportEntries,
+        async (trackedAdd) => {
+          await importExportPackageToAlbum({
+            packagePathOrUri: pendingImportPath,
+            albumId,
+            passphrase,
+            addFileToAlbum: trackedAdd,
+          });
+        },
+      );
+
+      const resultImport = {
+        importedCount: pendingImportEntries.length,
+        label: pendingImportName ?? "package",
+      };
+
       closeImportModal();
       if (resultImport.importedCount === 1) {
         Alert.alert("Import", `Imported "${resultImport.label}"`);
@@ -375,8 +802,9 @@ export default function AlbumTab() {
     pendingImportPath,
     importPassphrase,
     albumId,
-    addFileToAlbum,
-    loadFiles,
+    importPackageAsBatch,
+    pendingImportEntries,
+    pendingImportName,
     closeImportModal,
   ]);
 
@@ -940,6 +1368,7 @@ export default function AlbumTab() {
         setPendingImportPath(null);
         setPendingImportName(null);
         setPendingImportScope(null);
+        setPendingImportEntries([]);
         setImportPassphrase("");
         setIsImportingPackage(false);
         setShowAlbumMenu(false);
@@ -985,6 +1414,82 @@ export default function AlbumTab() {
 
     return result;
   }, [files, typeValue, sortValue]);
+
+  const activeBatch = useMemo(() => {
+    const selected = importBatches.find((batch) => batch.id === activeBatchId);
+    if (selected) return selected;
+
+    const running = importBatches.find((batch) => {
+      const errors = batch.jobs.filter((job) => job.status === "error").length;
+      return batch.doneCount + errors < batch.totalJobs;
+    });
+    if (running) return running;
+
+    return importBatches[0] ?? null;
+  }, [activeBatchId, importBatches]);
+
+  const activeBatchStats = useMemo(() => {
+    if (!activeBatch) {
+      return {
+        total: 0,
+        done: 0,
+        errors: 0,
+        progress: 0,
+        completed: true,
+      };
+    }
+
+    const total = activeBatch.totalJobs;
+    const done = activeBatch.doneCount;
+    const errors = activeBatch.jobs.filter(
+      (job) => job.status === "error",
+    ).length;
+
+    const inFlightProgress = activeBatch.jobs.reduce((acc, job) => {
+      if (job.status === "error")
+        return acc + stageProgressByStatus("encrypting");
+      return acc + job.progress;
+    }, 0);
+
+    const progress =
+      total === 0 ? 0 : Math.min(1, (done + inFlightProgress) / total);
+    const completed = done + errors === total;
+
+    return { total, done, errors, progress, completed };
+  }, [activeBatch]);
+
+  useEffect(() => {
+    if (!activeBatch) return;
+
+    const shouldAutoDismiss =
+      activeBatchStats.completed &&
+      activeBatchStats.errors === 0 &&
+      activeBatch.jobs.length === 0;
+
+    if (!shouldAutoDismiss) {
+      if (dismissBatchTimeoutRef.current) {
+        clearTimeout(dismissBatchTimeoutRef.current);
+        dismissBatchTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (dismissBatchTimeoutRef.current) return;
+
+    dismissBatchTimeoutRef.current = setTimeout(() => {
+      clearImportBatch(activeBatch.id);
+      dismissBatchTimeoutRef.current = null;
+    }, 1000);
+  }, [activeBatch, activeBatchStats, clearImportBatch]);
+
+  useEffect(() => {
+    return () => {
+      if (dismissBatchTimeoutRef.current) {
+        clearTimeout(dismissBatchTimeoutRef.current);
+        dismissBatchTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <SafeAreaView className="flex-1 px-8 pt-8 bg-primary">
@@ -1087,6 +1592,111 @@ export default function AlbumTab() {
           </View>
         }
       />
+
+      {activeBatch ? (
+        <View className="absolute left-8 right-8 bottom-36 rounded-2xl border border-primary-400 bg-primary-500/95 p-3">
+          <View className="flex-row items-center justify-between mb-2">
+            <Text className="text-secondary-400 text-sm font-fira-code">
+              import/jobs: {activeBatch.label}
+            </Text>
+            {activeBatchStats.errors > 0 ? (
+              <TouchableOpacity
+                onPress={() => clearImportBatch(activeBatch.id)}
+                className="px-2 py-1 rounded-lg bg-primary-600"
+              >
+                <Text className="text-primary-100 text-xs font-fira-code">
+                  close
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View className="flex-row items-center justify-between">
+            <Text className="text-secondary text-sm font-fira-code">
+              {activeBatchStats.done}/{activeBatchStats.total} files
+            </Text>
+            <Text className="text-primary-100 text-xs font-fira-code">
+              {Math.round(activeBatchStats.progress * 100)}%
+              {activeBatchStats.errors > 0
+                ? ` | errors:${activeBatchStats.errors}`
+                : ""}
+            </Text>
+          </View>
+
+          <View className="mt-2">
+            <SmoothProgressBar
+              progress={activeBatchStats.progress}
+              fillColor={Colors.secondary[500]}
+              height={8}
+              backgroundColor={Colors.primary[600]}
+            />
+          </View>
+
+          <ScrollView
+            className="mt-3 max-h-52"
+            showsVerticalScrollIndicator={false}
+          >
+            {activeBatch.jobs.map((job) => (
+              <View
+                key={job.id}
+                className="mb-2 rounded-xl border border-primary-400 bg-primary-600/70 px-3 py-2"
+              >
+                <View className="flex-row items-center justify-between">
+                  <Text
+                    className="text-secondary text-xs font-fira-code"
+                    numberOfLines={1}
+                    style={{ maxWidth: width - 190 }}
+                  >
+                    {job.index + 1}/{job.total} {job.name}
+                  </Text>
+                  <Text
+                    className="text-xs font-fira-code"
+                    style={{ color: stageColor(job.status) }}
+                  >
+                    {jobStatusLabel(job.status)}
+                  </Text>
+                </View>
+
+                <View className="flex-row items-center justify-between mt-1">
+                  <Text className="text-primary-100 text-xs font-fira-code-light">
+                    {Math.round(job.progress * 100)}%
+                    {job.retries > 0 ? ` | retry:${job.retries}` : ""}
+                  </Text>
+                  {job.status === "error" && job.uri ? (
+                    <TouchableOpacity
+                      onPress={() => void retryImportJob(job.batchId, job.id)}
+                      className="px-2 py-1 rounded-lg bg-red-400"
+                    >
+                      <Text className="text-primary-500 text-xs font-fira-code-semibold">
+                        retry
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                <View className="mt-1">
+                  <SmoothProgressBar
+                    progress={job.progress}
+                    fillColor={stageColor(job.status)}
+                    height={6}
+                    backgroundColor={Colors.primary[500]}
+                  />
+                </View>
+
+                {job.status === "error" && job.errorMessage ? (
+                  <Text
+                    className="text-red-300 text-xs font-fira-code-light mt-1"
+                    numberOfLines={2}
+                  >
+                    {job.errorMessage}
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
       <TouchableOpacity
         onPress={handleAddFiles}
         disabled={addingFiles}
@@ -1844,12 +2454,7 @@ export default function AlbumTab() {
 
           <Animated.View
             className="flex-1"
-            style={{
-              transform: [
-                { translateY: viewerTranslateY },
-                { scale: viewerScale },
-              ],
-            }}
+            style={{ transform: [{ translateY: viewerTranslateY }] }}
             {...viewerPanResponder.panHandlers}
           >
             <FlatList
@@ -1875,11 +2480,11 @@ export default function AlbumTab() {
                 return (
                   <Pressable
                     style={{ width }}
-                    className="flex-1 items-center justify-center"
+                    className="flex-1"
                     onPress={() => setShowViewerChrome((prev) => !prev)}
                   >
                     {!uri ? (
-                      <View className="items-center gap-3">
+                      <View className="flex-1 items-center justify-center gap-3">
                         <ActivityIndicator color={Colors.secondary[500]} />
                         <Text className="text-secondary-500 text-base font-fira-code">
                           {viewerLoadingFileId === item.id
@@ -1894,7 +2499,9 @@ export default function AlbumTab() {
                         resizeMode="contain"
                       />
                     ) : item.mime.startsWith("video/") ? (
-                      <VideoFilePlayer uri={uri} />
+                      <View className="w-full h-full">
+                        <VideoFilePlayer uri={uri} />
+                      </View>
                     ) : (
                       <WebView
                         source={{ uri }}

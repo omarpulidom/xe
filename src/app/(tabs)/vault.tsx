@@ -11,6 +11,8 @@ import {
   Share,
   ActivityIndicator,
   useWindowDimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { randomUUID } from "react-native-quick-crypto";
@@ -27,7 +29,6 @@ import {
   createAlbum,
   deleteAlbum,
   getFilesByAlbum,
-  createPlainExportAlbumPackage,
   createEncryptedExportAlbumPackage,
   readExportPackage,
   importExportPackageToAlbum,
@@ -128,6 +129,7 @@ export default function VaultTab() {
   // px-8 = 32px each side (64 total), gap between columns = 12
   const itemWidth = (width - 64 - 12) / 2;
   const vaultMenuWidth = 196;
+  const keyboardModalGap = 20;
 
   const filteredAlbums = useMemo(() => {
     const result = [...albums];
@@ -288,31 +290,34 @@ export default function VaultTab() {
         return;
       }
 
-      const filesWithPlain = [] as Array<{
-        file: (typeof albumFiles)[number];
-        decryptedFilePath: string;
-      }>;
+      closeAlbumActions();
 
+      let sharedCount = 0;
       for (const file of albumFiles) {
-        const plain = await decryptFileToCache(file.id);
-        if (!plain) {
+        const decryptedFilePath = await decryptFileToCache(file.id);
+        if (!decryptedFilePath) {
           throw new Error(`Could not decrypt ${file.name}`);
         }
-        filesWithPlain.push({ file, decryptedFilePath: plain });
+
+        const result = await Share.share({
+          url: `file://${decryptedFilePath}`,
+          title: `Export ${file.name}`,
+          message: file.name,
+        });
+
+        if (result.action === Share.dismissedAction) {
+          break;
+        }
+
+        sharedCount += 1;
       }
 
-      const packageUri = await createPlainExportAlbumPackage({
-        albumId: selectedAlbum.id,
-        albumName: selectedAlbum.name,
-        files: filesWithPlain,
-      });
-
-      closeAlbumActions();
-      await Share.share({
-        url: packageUri,
-        title: "Album export",
-        message: "Calc album export package",
-      });
+      if (sharedCount > 0) {
+        Alert.alert(
+          "Export",
+          `Shared ${sharedCount} file${sharedCount === 1 ? "" : "s"}.`,
+        );
+      }
     } catch (err) {
       console.error("[VaultTab] plain album export error:", err);
       Alert.alert("Export", "Could not export album.");
@@ -539,20 +544,6 @@ export default function VaultTab() {
         {!showNewAlbum && (
           <View className="flex-row items-center gap-3">
             <TouchableOpacity
-              onPress={handlePickImportPackage}
-              disabled={isApplyingAction}
-              className="items-center justify-center h-12 w-24 bg-primary-500 rounded-2xl"
-            >
-              {isApplyingAction ? (
-                <ActivityIndicator color={Colors.secondary[400]} />
-              ) : (
-                <Text className="text-secondary-400 text-lg font-fira-code-semibold">
-                  /imp
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
               onPress={() => setShowNewAlbum(true)}
               disabled={isApplyingAction}
               className="items-center justify-center h-12 w-24 bg-secondary-500 rounded-2xl"
@@ -714,128 +705,137 @@ export default function VaultTab() {
           style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
           onPress={closeAlbumActions}
         >
-          <Pressable
-            className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl overflow-hidden"
-            onPress={() => {}}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={keyboardModalGap}
+            className="w-full items-center justify-center"
+            style={{ paddingBottom: keyboardModalGap }}
           >
-            {albumActionMode === "menu" && (
-              <>
-                <View className="px-4 py-4 border-b border-primary-400">
-                  <Text
-                    className="text-secondary text-lg font-fira-code-semibold"
-                    numberOfLines={1}
-                  >
-                    {selectedAlbum?.name}
-                  </Text>
-                </View>
+            <Pressable
+              className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl overflow-hidden"
+              onPress={() => {}}
+            >
+              {albumActionMode === "menu" && (
+                <>
+                  <View className="px-4 py-4 border-b border-primary-400">
+                    <Text
+                      className="text-secondary text-lg font-fira-code-semibold"
+                      numberOfLines={1}
+                    >
+                      {selectedAlbum?.name}
+                    </Text>
+                  </View>
 
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={handleExportPlainAlbum}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-secondary-400 text-lg font-fira-code">
-                    export_plain
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={() => setAlbumActionMode("exportEncrypted")}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-secondary-400 text-lg font-fira-code">
-                    export_encrypted
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={handleDeleteFromMenu}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-red-300 text-lg font-fira-code">
-                    delete
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4"
-                  onPress={closeAlbumActions}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-primary-100 text-lg font-fira-code">
-                    cancel
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {albumActionMode === "exportEncrypted" && selectedAlbum && (
-              <View className="p-4 gap-4">
-                <Text className="text-secondary-400 text-lg font-fira-code">
-                  encrypted export
-                </Text>
-                <Text className="text-secondary-600 text-base font-fira-code-light">
-                  This passphrase will be required on import.
-                </Text>
-                <SelectInput
-                  options={recipientContacts.map((recipient) => ({
-                    label: recipient.name,
-                    value: recipient.id,
-                  }))}
-                  value={selectedRecipientId}
-                  onValueChange={setSelectedRecipientId}
-                  placeholder="recipient"
-                  className="w-full"
-                />
-                <TextInput
-                  value={exportPassphrase}
-                  onChangeText={setExportPassphrase}
-                  placeholder="passphrase"
-                  placeholderTextColor={Colors.primary[100]}
-                  secureTextEntry
-                  autoFocus
-                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-                />
-                <TextInput
-                  value={exportPassphraseConfirm}
-                  onChangeText={setExportPassphraseConfirm}
-                  placeholder="confirm passphrase"
-                  placeholderTextColor={Colors.primary[100]}
-                  secureTextEntry
-                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-                  onSubmitEditing={handleExportEncryptedAlbum}
-                />
-                <View className="flex-row items-center justify-end gap-3">
                   <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                    onPress={() => setAlbumActionMode("menu")}
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={handleExportPlainAlbum}
                     disabled={isApplyingAction}
+                    activeOpacity={0.7}
                   >
-                    <Text className="text-secondary font-fira-code">back</Text>
+                    <Text className="text-secondary-400 text-lg font-fira-code">
+                      export_plain
+                    </Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
-                    onPress={handleExportEncryptedAlbum}
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={() => setAlbumActionMode("exportEncrypted")}
                     disabled={isApplyingAction}
+                    activeOpacity={0.7}
                   >
-                    {isApplyingAction ? (
-                      <ActivityIndicator color={Colors.primary[500]} />
-                    ) : (
-                      <Text className="text-primary-500 font-fira-code-semibold">
-                        export
+                    <Text className="text-secondary-400 text-lg font-fira-code">
+                      export_encrypted
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={handleDeleteFromMenu}
+                    disabled={isApplyingAction}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-red-300 text-lg font-fira-code">
+                      delete
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="px-4 py-4"
+                    onPress={closeAlbumActions}
+                    disabled={isApplyingAction}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-primary-100 text-lg font-fira-code">
+                      cancel
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {albumActionMode === "exportEncrypted" && selectedAlbum && (
+                <View className="p-4 gap-4">
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    encrypted export
+                  </Text>
+                  <Text className="text-secondary-600 text-base font-fira-code-light">
+                    This passphrase will be required on import.
+                  </Text>
+                  <SelectInput
+                    options={recipientContacts.map((recipient) => ({
+                      label: recipient.name,
+                      value: recipient.id,
+                    }))}
+                    value={selectedRecipientId}
+                    onValueChange={setSelectedRecipientId}
+                    placeholder="recipient"
+                    className="w-full"
+                  />
+                  <TextInput
+                    value={exportPassphrase}
+                    onChangeText={setExportPassphrase}
+                    placeholder="passphrase"
+                    placeholderTextColor={Colors.primary[100]}
+                    secureTextEntry
+                    autoFocus
+                    className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                  />
+                  <TextInput
+                    value={exportPassphraseConfirm}
+                    onChangeText={setExportPassphraseConfirm}
+                    placeholder="confirm passphrase"
+                    placeholderTextColor={Colors.primary[100]}
+                    secureTextEntry
+                    className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                    onSubmitEditing={handleExportEncryptedAlbum}
+                  />
+                  <View className="flex-row items-center justify-end gap-3">
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                      onPress={() => setAlbumActionMode("menu")}
+                      disabled={isApplyingAction}
+                    >
+                      <Text className="text-secondary font-fira-code">
+                        back
                       </Text>
-                    )}
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                      onPress={handleExportEncryptedAlbum}
+                      disabled={isApplyingAction}
+                    >
+                      {isApplyingAction ? (
+                        <ActivityIndicator color={Colors.primary[500]} />
+                      ) : (
+                        <Text className="text-primary-500 font-fira-code-semibold">
+                          export
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            )}
-          </Pressable>
+              )}
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 
@@ -850,67 +850,74 @@ export default function VaultTab() {
           style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
           onPress={closeImportPackageModal}
         >
-          <Pressable
-            className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl p-4 gap-4"
-            onPress={() => {}}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={keyboardModalGap}
+            className="w-full items-center justify-center"
+            style={{ paddingBottom: keyboardModalGap }}
           >
-            <Text className="text-secondary-400 text-lg font-fira-code">
-              import package
-            </Text>
-            <Text className="text-secondary-600 text-base font-fira-code-light">
-              {importPackageName
-                ? importPackageScope === "album"
-                  ? `Album package: ${importPackageName}`
-                  : `File package: ${importPackageName}`
-                : "Select destination to import."}
-            </Text>
+            <Pressable
+              className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl p-4 gap-4"
+              onPress={() => {}}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">
+                import package
+              </Text>
+              <Text className="text-secondary-600 text-base font-fira-code-light">
+                {importPackageName
+                  ? importPackageScope === "album"
+                    ? `Album package: ${importPackageName}`
+                    : `File package: ${importPackageName}`
+                  : "Select destination to import."}
+              </Text>
 
-            <SelectInput
-              options={importAlbumOptions.map((album) => ({
-                label: album.name,
-                value: album.id,
-              }))}
-              value={importTargetAlbumId}
-              onValueChange={setImportTargetAlbumId}
-              placeholder="destination album"
-              className="w-full"
-            />
-
-            {importNeedsPassphrase && (
-              <TextInput
-                value={importPassphrase}
-                onChangeText={setImportPassphrase}
-                placeholder="passphrase"
-                placeholderTextColor={Colors.primary[100]}
-                secureTextEntry
-                className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-                onSubmitEditing={handleSubmitImportPackage}
+              <SelectInput
+                options={importAlbumOptions.map((album) => ({
+                  label: album.name,
+                  value: album.id,
+                }))}
+                value={importTargetAlbumId}
+                onValueChange={setImportTargetAlbumId}
+                placeholder="destination album"
+                className="w-full"
               />
-            )}
 
-            <View className="flex-row items-center justify-end gap-3">
-              <TouchableOpacity
-                className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                onPress={closeImportPackageModal}
-                disabled={isApplyingAction}
-              >
-                <Text className="text-secondary font-fira-code">cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
-                onPress={handleSubmitImportPackage}
-                disabled={isApplyingAction}
-              >
-                {isApplyingAction ? (
-                  <ActivityIndicator color={Colors.primary[500]} />
-                ) : (
-                  <Text className="text-primary-500 font-fira-code-semibold">
-                    import
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </Pressable>
+              {importNeedsPassphrase && (
+                <TextInput
+                  value={importPassphrase}
+                  onChangeText={setImportPassphrase}
+                  placeholder="passphrase"
+                  placeholderTextColor={Colors.primary[100]}
+                  secureTextEntry
+                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                  onSubmitEditing={handleSubmitImportPackage}
+                />
+              )}
+
+              <View className="flex-row items-center justify-end gap-3">
+                <TouchableOpacity
+                  className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                  onPress={closeImportPackageModal}
+                  disabled={isApplyingAction}
+                >
+                  <Text className="text-secondary font-fira-code">cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                  onPress={handleSubmitImportPackage}
+                  disabled={isApplyingAction}
+                >
+                  {isApplyingAction ? (
+                    <ActivityIndicator color={Colors.primary[500]} />
+                  ) : (
+                    <Text className="text-primary-500 font-fira-code-semibold">
+                      import
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 
@@ -949,6 +956,18 @@ export default function VaultTab() {
               </Text>
             </View>
             <TouchableOpacity
+              className="px-4 py-4 border-b border-primary-400"
+              onPress={() => {
+                setShowVaultMenu(false);
+                void handlePickImportPackage();
+              }}
+              activeOpacity={0.75}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">
+                import
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               className="px-4 py-4"
               onPress={handleOpenAddRecipient}
               activeOpacity={0.75}
@@ -972,63 +991,70 @@ export default function VaultTab() {
           style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
           onPress={closeAddRecipientModal}
         >
-          <Pressable
-            className="w-full max-w-md bg-primary-500 border border-primary-400 rounded-2xl p-5 gap-4"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.35,
-              shadowRadius: 20,
-              elevation: 14,
-            }}
-            onPress={() => {}}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={keyboardModalGap}
+            className="w-full items-center justify-center"
+            style={{ paddingBottom: keyboardModalGap }}
           >
-            <Text className="text-secondary-400 text-lg font-fira-code">
-              add recipient
-            </Text>
-
-            <View className="rounded-xl border border-primary-400 bg-primary-600/60 px-3 py-2">
-              <Text className="text-primary-100 text-xs font-fira-code">
-                paste recipient's PEM public key and alias
+            <Pressable
+              className="w-full max-w-md bg-primary-500 border border-primary-400 rounded-2xl p-5 gap-4"
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.35,
+                shadowRadius: 20,
+                elevation: 14,
+              }}
+              onPress={() => {}}
+            >
+              <Text className="text-secondary text-lg font-fira-code">
+                add recipient
               </Text>
-            </View>
 
-            <TextInput
-              value={newRecipientName}
-              onChangeText={setNewRecipientName}
-              placeholder="recipient name"
-              placeholderTextColor={Colors.primary[100]}
-              className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-            />
-            <TextInput
-              value={newRecipientPublicKey}
-              onChangeText={setNewRecipientPublicKey}
-              placeholder="recipient public key (PEM)"
-              placeholderTextColor={Colors.primary[100]}
-              multiline
-              className="min-h-28 px-4 py-3 border border-primary-400 rounded-2xl text-secondary font-fira-code text-sm"
-            />
-
-            <View className="flex-row items-center justify-end gap-3">
-              <TouchableOpacity
-                className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                onPress={closeAddRecipientModal}
-              >
-                <Text className="text-secondary font-fira-code">cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
-                onPress={() => {
-                  handleAddRecipientContact();
-                  closeAddRecipientModal();
-                }}
-              >
-                <Text className="text-primary-500 font-fira-code-semibold">
-                  add
+              <View className="rounded-xl border border-primary-400 bg-primary-600/60 px-3 py-2">
+                <Text className="text-primary-100 text-xs font-fira-code">
+                  paste recipient's PEM public key and alias
                 </Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
+              </View>
+
+              <TextInput
+                value={newRecipientName}
+                onChangeText={setNewRecipientName}
+                placeholder="recipient name"
+                placeholderTextColor={Colors.primary[100]}
+                className="h-12 px-4 border border-primary-300 rounded-2xl text-secondary font-fira-code text-lg"
+              />
+              <TextInput
+                value={newRecipientPublicKey}
+                onChangeText={setNewRecipientPublicKey}
+                placeholder="recipient public key (PEM)"
+                placeholderTextColor={Colors.primary[100]}
+                multiline
+                className="min-h-28 px-4 py-3 border border-primary-300 rounded-2xl text-secondary font-fira-code text-sm"
+              />
+
+              <View className="flex-row items-center justify-end gap-3">
+                <TouchableOpacity
+                  className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                  onPress={closeAddRecipientModal}
+                >
+                  <Text className="text-secondary font-fira-code">cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                  onPress={() => {
+                    handleAddRecipientContact();
+                    closeAddRecipientModal();
+                  }}
+                >
+                  <Text className="text-primary-500 font-fira-code-semibold">
+                    add
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
     </SafeAreaView>

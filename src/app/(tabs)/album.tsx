@@ -23,7 +23,6 @@ import {
   getAlbums,
   readExportPackage,
   importExportPackageToAlbum,
-  createPlainExportFilePackage,
   createEncryptedExportFilePackage,
   getRecipientContacts,
   type RecipientContact,
@@ -31,7 +30,15 @@ import {
   type AlbumWithCount,
 } from "@/lib/vault";
 import { useVault } from "@/components/Providers/VaultProvider";
-import { Alert, Modal, Image, ActivityIndicator, Share } from "react-native";
+import {
+  Alert,
+  Modal,
+  Image,
+  ActivityIndicator,
+  Share,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { WebView } from "react-native-webview";
@@ -141,6 +148,7 @@ export default function AlbumTab() {
   const { width } = useWindowDimensions();
   // px-8 = 32px each side (64 total), gap between columns = 12
   const itemWidth = (width - 64 - 12) / 2;
+  const keyboardModalGap = 20;
 
   const loadFiles = useCallback(async () => {
     if (!albumId) return;
@@ -474,16 +482,11 @@ export default function AlbumTab() {
         return;
       }
 
-      const packageUri = await createPlainExportFilePackage({
-        file: selectedFile,
-        decryptedFilePath,
-      });
-
       closeFileActions();
       await Share.share({
-        url: packageUri,
+        url: `file://${decryptedFilePath}`,
         title: "Export file",
-        message: "Calc export package",
+        message: selectedFile.name,
       });
     } catch (err) {
       console.error("[AlbumTab] plain export error:", err);
@@ -712,285 +715,300 @@ export default function AlbumTab() {
           style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
           onPress={closeFileActions}
         >
-          <Pressable
-            className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl overflow-hidden"
-            onPress={() => {}}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={keyboardModalGap}
+            className="w-full items-center justify-center"
+            style={{ paddingBottom: keyboardModalGap }}
           >
-            {fileActionMode === "menu" && (
-              <>
-                <View className="px-4 py-4 border-b border-primary-400">
-                  <Text
-                    className="text-secondary text-lg font-fira-code-semibold"
-                    numberOfLines={1}
-                  >
-                    {selectedFile?.name}
-                  </Text>
-                </View>
+            <Pressable
+              className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl overflow-hidden"
+              onPress={() => {}}
+            >
+              {fileActionMode === "menu" && (
+                <>
+                  <View className="px-4 py-4 border-b border-primary-400">
+                    <Text
+                      className="text-secondary text-lg font-fira-code-semibold"
+                      numberOfLines={1}
+                    >
+                      {selectedFile?.name}
+                    </Text>
+                  </View>
 
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={() => setFileActionMode("rename")}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-secondary-400 text-lg font-fira-code">
-                    rename
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={handleOpenMove}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-secondary-400 text-lg font-fira-code">
-                    move
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={() => setFileActionMode("details")}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-secondary-400 text-lg font-fira-code">
-                    file_details
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={handleExportPlainFromMenu}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-secondary-400 text-lg font-fira-code">
-                    export_plain
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={() => setFileActionMode("exportEncrypted")}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-secondary-400 text-lg font-fira-code">
-                    export_encrypted
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4 border-b border-primary-400"
-                  onPress={handleDeleteFromMenu}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-red-300 text-lg font-fira-code">
-                    delete
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="px-4 py-4"
-                  onPress={closeFileActions}
-                  disabled={isApplyingAction}
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-primary-100 text-lg font-fira-code">
-                    cancel
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {fileActionMode === "rename" && (
-              <View className="p-4 gap-4">
-                <Text className="text-secondary-400 text-lg font-fira-code">
-                  rename file
-                </Text>
-                <TextInput
-                  value={renameValue}
-                  onChangeText={setRenameValue}
-                  placeholder="file_name"
-                  placeholderTextColor={Colors.primary[100]}
-                  autoFocus
-                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-                  onSubmitEditing={handleSubmitRename}
-                />
-                <View className="flex-row items-center justify-end gap-3">
                   <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                    onPress={() => setFileActionMode("menu")}
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={() => setFileActionMode("rename")}
                     disabled={isApplyingAction}
+                    activeOpacity={0.7}
                   >
-                    <Text className="text-secondary font-fira-code">back</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
-                    onPress={handleSubmitRename}
-                    disabled={isApplyingAction}
-                  >
-                    <Text className="text-primary-500 font-fira-code-semibold">
-                      save
+                    <Text className="text-secondary-400 text-lg font-fira-code">
+                      rename
                     </Text>
                   </TouchableOpacity>
-                </View>
-              </View>
-            )}
 
-            {fileActionMode === "move" && (
-              <View className="p-4 gap-4">
-                <Text className="text-secondary-400 text-lg font-fira-code">
-                  move file
-                </Text>
-                <SelectInput
-                  options={albums
-                    .filter((a) => a.id !== albumId)
-                    .map((a) => ({ label: a.name, value: a.id }))}
-                  value={moveAlbumId}
-                  onValueChange={setMoveAlbumId}
-                  placeholder="album"
-                  className="w-full"
-                />
-                <View className="flex-row items-center justify-end gap-3">
                   <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                    onPress={() => setFileActionMode("menu")}
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={handleOpenMove}
                     disabled={isApplyingAction}
+                    activeOpacity={0.7}
                   >
-                    <Text className="text-secondary font-fira-code">back</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
-                    onPress={handleSubmitMove}
-                    disabled={isApplyingAction}
-                  >
-                    <Text className="text-primary-500 font-fira-code-semibold">
+                    <Text className="text-secondary-400 text-lg font-fira-code">
                       move
                     </Text>
                   </TouchableOpacity>
-                </View>
-              </View>
-            )}
 
-            {fileActionMode === "details" && selectedFile && (
-              <View className="p-4 gap-4">
-                <Text className="text-secondary-400 text-lg font-fira-code">
-                  file details
-                </Text>
-
-                <View className="border border-primary-400 rounded-2xl p-3 gap-2 bg-primary-600">
-                  <Text
-                    className="text-base font-fira-code-light"
-                    numberOfLines={2}
-                  >
-                    <Text className="text-secondary-600">name: </Text>
-                    <Text className="text-secondary-200">
-                      {selectedFile.name}
-                    </Text>
-                  </Text>
-                  <Text className="text-base font-fira-code-light">
-                    <Text className="text-secondary-600">type: </Text>
-                    <Text className="text-secondary-200">
-                      {selectedFile.mime}
-                    </Text>
-                  </Text>
-                  <Text className="text-base font-fira-code-light">
-                    <Text className="text-secondary-600">size: </Text>
-                    <Text className="text-secondary-200">
-                      {formatFileSize(selectedFile.size)} ({selectedFile.size}{" "}
-                      B)
-                    </Text>
-                  </Text>
-                  <Text className="text-base font-fira-code-light">
-                    <Text className="text-secondary-600">created: </Text>
-                    <Text className="text-secondary-200">
-                      {formatTimestamp(selectedFile.created_at)}
-                    </Text>
-                  </Text>
-                  <Text className="text-base font-fira-code-light">
-                    <Text className="text-secondary-600">id: </Text>
-                    <Text className="text-secondary-200">
-                      {selectedFile.id}
-                    </Text>
-                  </Text>
-                </View>
-
-                <View className="flex-row items-center justify-end">
                   <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                    onPress={() => setFileActionMode("menu")}
-                  >
-                    <Text className="text-secondary font-fira-code">back</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {fileActionMode === "exportEncrypted" && selectedFile && (
-              <View className="p-4 gap-4">
-                <Text className="text-secondary-400 text-lg font-fira-code">
-                  encrypted export
-                </Text>
-                <Text className="text-secondary-600 text-base font-fira-code-light">
-                  This passphrase will be required on import.
-                </Text>
-                <SelectInput
-                  options={recipientContacts.map((recipient) => ({
-                    label: recipient.name,
-                    value: recipient.id,
-                  }))}
-                  value={selectedRecipientId}
-                  onValueChange={setSelectedRecipientId}
-                  placeholder="recipient"
-                  className="w-full"
-                />
-                <TextInput
-                  value={exportPassphrase}
-                  onChangeText={setExportPassphrase}
-                  placeholder="passphrase"
-                  placeholderTextColor={Colors.primary[100]}
-                  secureTextEntry
-                  autoFocus
-                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-                />
-                <TextInput
-                  value={exportPassphraseConfirm}
-                  onChangeText={setExportPassphraseConfirm}
-                  placeholder="confirm passphrase"
-                  placeholderTextColor={Colors.primary[100]}
-                  secureTextEntry
-                  className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-                  onSubmitEditing={handleExportEncryptedFromMenu}
-                />
-                <View className="flex-row items-center justify-end gap-3">
-                  <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                    onPress={() => setFileActionMode("menu")}
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={() => setFileActionMode("details")}
                     disabled={isApplyingAction}
+                    activeOpacity={0.7}
                   >
-                    <Text className="text-secondary font-fira-code">back</Text>
+                    <Text className="text-secondary-400 text-lg font-fira-code">
+                      file_details
+                    </Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
-                    className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
-                    onPress={handleExportEncryptedFromMenu}
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={handleExportPlainFromMenu}
                     disabled={isApplyingAction}
+                    activeOpacity={0.7}
                   >
-                    {isApplyingAction ? (
-                      <ActivityIndicator color={Colors.primary[500]} />
-                    ) : (
-                      <Text className="text-primary-500 font-fira-code-semibold">
-                        export
+                    <Text className="text-secondary-400 text-lg font-fira-code">
+                      export_plain
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={() => setFileActionMode("exportEncrypted")}
+                    disabled={isApplyingAction}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-secondary-400 text-lg font-fira-code">
+                      export_encrypted
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="px-4 py-4 border-b border-primary-400"
+                    onPress={handleDeleteFromMenu}
+                    disabled={isApplyingAction}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-red-300 text-lg font-fira-code">
+                      delete
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="px-4 py-4"
+                    onPress={closeFileActions}
+                    disabled={isApplyingAction}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-primary-100 text-lg font-fira-code">
+                      cancel
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {fileActionMode === "rename" && (
+                <View className="p-4 gap-4">
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    rename file
+                  </Text>
+                  <TextInput
+                    value={renameValue}
+                    onChangeText={setRenameValue}
+                    placeholder="file_name"
+                    placeholderTextColor={Colors.primary[100]}
+                    autoFocus
+                    className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                    onSubmitEditing={handleSubmitRename}
+                  />
+                  <View className="flex-row items-center justify-end gap-3">
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                      onPress={() => setFileActionMode("menu")}
+                      disabled={isApplyingAction}
+                    >
+                      <Text className="text-secondary font-fira-code">
+                        back
                       </Text>
-                    )}
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                      onPress={handleSubmitRename}
+                      disabled={isApplyingAction}
+                    >
+                      <Text className="text-primary-500 font-fira-code-semibold">
+                        save
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            )}
-          </Pressable>
+              )}
+
+              {fileActionMode === "move" && (
+                <View className="p-4 gap-4">
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    move file
+                  </Text>
+                  <SelectInput
+                    options={albums
+                      .filter((a) => a.id !== albumId)
+                      .map((a) => ({ label: a.name, value: a.id }))}
+                    value={moveAlbumId}
+                    onValueChange={setMoveAlbumId}
+                    placeholder="album"
+                    className="w-full"
+                  />
+                  <View className="flex-row items-center justify-end gap-3">
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                      onPress={() => setFileActionMode("menu")}
+                      disabled={isApplyingAction}
+                    >
+                      <Text className="text-secondary font-fira-code">
+                        back
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                      onPress={handleSubmitMove}
+                      disabled={isApplyingAction}
+                    >
+                      <Text className="text-primary-500 font-fira-code-semibold">
+                        move
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {fileActionMode === "details" && selectedFile && (
+                <View className="p-4 gap-4">
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    file details
+                  </Text>
+
+                  <View className="border border-primary-400 rounded-2xl p-3 gap-2 bg-primary-600">
+                    <Text
+                      className="text-base font-fira-code-light"
+                      numberOfLines={2}
+                    >
+                      <Text className="text-secondary-600">name: </Text>
+                      <Text className="text-secondary-200">
+                        {selectedFile.name}
+                      </Text>
+                    </Text>
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">type: </Text>
+                      <Text className="text-secondary-200">
+                        {selectedFile.mime}
+                      </Text>
+                    </Text>
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">size: </Text>
+                      <Text className="text-secondary-200">
+                        {formatFileSize(selectedFile.size)} ({selectedFile.size}{" "}
+                        B)
+                      </Text>
+                    </Text>
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">created: </Text>
+                      <Text className="text-secondary-200">
+                        {formatTimestamp(selectedFile.created_at)}
+                      </Text>
+                    </Text>
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">id: </Text>
+                      <Text className="text-secondary-200">
+                        {selectedFile.id}
+                      </Text>
+                    </Text>
+                  </View>
+
+                  <View className="flex-row items-center justify-end">
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                      onPress={() => setFileActionMode("menu")}
+                    >
+                      <Text className="text-secondary font-fira-code">
+                        back
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {fileActionMode === "exportEncrypted" && selectedFile && (
+                <View className="p-4 gap-4">
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    encrypted export
+                  </Text>
+                  <Text className="text-secondary-600 text-base font-fira-code-light">
+                    This passphrase will be required on import.
+                  </Text>
+                  <SelectInput
+                    options={recipientContacts.map((recipient) => ({
+                      label: recipient.name,
+                      value: recipient.id,
+                    }))}
+                    value={selectedRecipientId}
+                    onValueChange={setSelectedRecipientId}
+                    placeholder="recipient"
+                    className="w-full"
+                  />
+                  <TextInput
+                    value={exportPassphrase}
+                    onChangeText={setExportPassphrase}
+                    placeholder="passphrase"
+                    placeholderTextColor={Colors.primary[100]}
+                    secureTextEntry
+                    autoFocus
+                    className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                  />
+                  <TextInput
+                    value={exportPassphraseConfirm}
+                    onChangeText={setExportPassphraseConfirm}
+                    placeholder="confirm passphrase"
+                    placeholderTextColor={Colors.primary[100]}
+                    secureTextEntry
+                    className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                    onSubmitEditing={handleExportEncryptedFromMenu}
+                  />
+                  <View className="flex-row items-center justify-end gap-3">
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                      onPress={() => setFileActionMode("menu")}
+                      disabled={isApplyingAction}
+                    >
+                      <Text className="text-secondary font-fira-code">
+                        back
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                      onPress={handleExportEncryptedFromMenu}
+                      disabled={isApplyingAction}
+                    >
+                      {isApplyingAction ? (
+                        <ActivityIndicator color={Colors.primary[500]} />
+                      ) : (
+                        <Text className="text-primary-500 font-fira-code-semibold">
+                          export
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 
@@ -1005,53 +1023,60 @@ export default function AlbumTab() {
           style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
           onPress={closeImportModal}
         >
-          <Pressable
-            className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl p-4 gap-4"
-            onPress={() => {}}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={keyboardModalGap}
+            className="w-full items-center justify-center"
+            style={{ paddingBottom: keyboardModalGap }}
           >
-            <Text className="text-secondary-400 text-lg font-fira-code">
-              encrypted import
-            </Text>
-            <Text className="text-secondary-600 text-base font-fira-code-light">
-              {pendingImportName
-                ? pendingImportScope === "album"
-                  ? `Album package: ${pendingImportName}`
-                  : `File package: ${pendingImportName}`
-                : "Enter passphrase to import this package."}
-            </Text>
-            <TextInput
-              value={importPassphrase}
-              onChangeText={setImportPassphrase}
-              placeholder="passphrase"
-              placeholderTextColor={Colors.primary[100]}
-              secureTextEntry
-              autoFocus
-              className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
-              onSubmitEditing={handleSubmitEncryptedImport}
-            />
-            <View className="flex-row items-center justify-end gap-3">
-              <TouchableOpacity
-                className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
-                onPress={closeImportModal}
-                disabled={isImportingPackage}
-              >
-                <Text className="text-secondary font-fira-code">cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
-                onPress={handleSubmitEncryptedImport}
-                disabled={isImportingPackage}
-              >
-                {isImportingPackage ? (
-                  <ActivityIndicator color={Colors.primary[500]} />
-                ) : (
-                  <Text className="text-primary-500 font-fira-code-semibold">
-                    import
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </Pressable>
+            <Pressable
+              className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl p-4 gap-4"
+              onPress={() => {}}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">
+                encrypted import
+              </Text>
+              <Text className="text-secondary-600 text-base font-fira-code-light">
+                {pendingImportName
+                  ? pendingImportScope === "album"
+                    ? `Album package: ${pendingImportName}`
+                    : `File package: ${pendingImportName}`
+                  : "Enter passphrase to import this package."}
+              </Text>
+              <TextInput
+                value={importPassphrase}
+                onChangeText={setImportPassphrase}
+                placeholder="passphrase"
+                placeholderTextColor={Colors.primary[100]}
+                secureTextEntry
+                autoFocus
+                className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                onSubmitEditing={handleSubmitEncryptedImport}
+              />
+              <View className="flex-row items-center justify-end gap-3">
+                <TouchableOpacity
+                  className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                  onPress={closeImportModal}
+                  disabled={isImportingPackage}
+                >
+                  <Text className="text-secondary font-fira-code">cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                  onPress={handleSubmitEncryptedImport}
+                  disabled={isImportingPackage}
+                >
+                  {isImportingPackage ? (
+                    <ActivityIndicator color={Colors.primary[500]} />
+                  ) : (
+                    <Text className="text-primary-500 font-fira-code-semibold">
+                      import
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 

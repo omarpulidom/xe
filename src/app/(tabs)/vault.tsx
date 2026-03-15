@@ -185,6 +185,14 @@ export default function VaultTab() {
     useCallback(() => {
       loadAlbums();
       loadRecipientContacts();
+
+      return () => {
+        setShowVaultMenu(false);
+        setShowAddRecipientModal(false);
+        setSelectedAlbum(null);
+        setAlbumActionMode(null);
+        setImportPackagePath(null);
+      };
     }, [loadAlbums, loadRecipientContacts]),
   );
 
@@ -663,12 +671,6 @@ export default function VaultTab() {
           >
             <View className="flex-row items-center justify-between">
               <Icon.FolderIcon size={48} color={Colors.primary[100]} />
-              <View className="-mr-2">
-                <Icon.DotsThreeVerticalIcon
-                  size={24}
-                  color={Colors.primary[100]}
-                />
-              </View>
             </View>
             <View className="flex-col">
               <Text className="text-secondary-300 text-xl font-fira-code">

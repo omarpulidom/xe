@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Colors } from "@/components/colors";
 import { SelectInput } from "@/components/Elements/SelectInput";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import {
@@ -566,6 +566,22 @@ export default function AlbumTab() {
     loadAlbums();
     loadRecipientContacts();
   }, [loadFiles, loadAlbums, loadRecipientContacts]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Ensure transient overlays are closed when leaving the screen.
+        setViewingFile(null);
+        setSelectedFile(null);
+        setFileActionMode(null);
+        setPendingImportPath(null);
+        setPendingImportName(null);
+        setPendingImportScope(null);
+        setImportPassphrase("");
+        setIsImportingPackage(false);
+      };
+    }, []),
+  );
 
   const filteredFiles = useMemo(() => {
     let result = [...files];

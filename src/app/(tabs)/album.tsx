@@ -6,6 +6,7 @@ import {
   Pressable,
   View,
   useWindowDimensions,
+  PanResponder,
 } from "react-native";
 import * as Icon from "phosphor-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -41,10 +42,13 @@ import {
   Share,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { WebView } from "react-native-webview";
+import { LinearGradient } from "expo-linear-gradient";
 
 const typeData = [
   {
@@ -119,10 +123,16 @@ export default function AlbumTab() {
   const insets = useSafeAreaInsets();
 
   // Viewing state
-  const [viewingFile, setViewingFile] = useState<{
-    uri: string;
-    mime: string;
-  } | null>(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [viewerFiles, setViewerFiles] = useState<VaultFile[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [showViewerChrome, setShowViewerChrome] = useState(true);
+  const [viewerDecryptedUris, setViewerDecryptedUris] = useState<
+    Record<string, string>
+  >({});
+  const [viewerLoadingFileId, setViewerLoadingFileId] = useState<string | null>(
+    null,
+  );
   const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null);
   const [fileActionMode, setFileActionMode] = useState<
     "menu" | "rename" | "move" | "details" | "exportEncrypted" | null
@@ -147,7 +157,6 @@ export default function AlbumTab() {
   const [importPassphrase, setImportPassphrase] = useState("");
   const [isImportingPackage, setIsImportingPackage] = useState(false);
   const [isApplyingAction, setIsApplyingAction] = useState(false);
-  const [decryptingFileId, setDecryptingFileId] = useState<string | null>(null);
   const [addingFiles, setAddingFiles] = useState(false);
   const [showAlbumMenu, setShowAlbumMenu] = useState(false);
   const [showAlbumActions, setShowAlbumActions] = useState(false);
@@ -165,12 +174,25 @@ export default function AlbumTab() {
     height: 0,
   });
   const menuButtonRef = useRef<View>(null);
+  const galleryRef = useRef<FlatList<VaultFile>>(null);
+  const viewerChromeAnim = useRef(new Animated.Value(1)).current;
+  const viewerTranslateY = useRef(new Animated.Value(0)).current;
 
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   // px-8 = 32px each side (64 total), gap between columns = 12
   const itemWidth = (width - 64 - 12) / 2;
   const keyboardModalGap = 20;
   const albumMenuWidth = 196;
+  const viewerBackdropOpacity = viewerTranslateY.interpolate({
+    inputRange: [0, height * 0.75],
+    outputRange: [1, 0],
+    extrapolate: "clamp",
+  });
+  const viewerScale = viewerTranslateY.interpolate({
+    inputRange: [0, height * 0.75],
+    outputRange: [1, 0.92],
+    extrapolate: "clamp",
+  });
 
   const loadFiles = useCallback(async () => {
     if (!albumId) return;
@@ -368,30 +390,103 @@ export default function AlbumTab() {
   }, [handleAddMedia, handleAddDocuments, handleImportPackage]);
 
   const handleViewFile = useCallback(
-    async (file: VaultFile) => {
-      try {
-        setDecryptingFileId(file.id);
-        const decryptedUri = await decryptFileToCache(file.id);
-        if (decryptedUri) {
-          setViewingFile({ uri: `file://${decryptedUri}`, mime: file.mime });
-        } else {
-          Alert.alert("Error", "Failed to decrypt file");
-        }
-      } catch (err) {
-        console.error("View file error", err);
-        Alert.alert("Error", "Could not open file");
-      } finally {
-        setDecryptingFileId(null);
-      }
+    (file: VaultFile) => {
+      const sourceFiles = files.length > 0 ? files : [file];
+      const startIndex = sourceFiles.findIndex((f) => f.id === file.id);
+      setViewerFiles(sourceFiles);
+      setViewerIndex(startIndex >= 0 ? startIndex : 0);
+      setShowViewerChrome(true);
+      viewerTranslateY.setValue(0);
+      setIsViewerOpen(true);
     },
-    [decryptFileToCache],
+    [files, viewerTranslateY],
   );
 
   const handleCloseView = useCallback(async () => {
     // I do NOT delete the file from cache immediately upon closing.
     // Instead it will remain in CacheDirectory and be cleared when the vault locks or app resets.
-    setViewingFile(null);
+    setIsViewerOpen(false);
+    setViewerFiles([]);
+    setViewerIndex(0);
+    setShowViewerChrome(true);
   }, []);
+
+  const closeViewerWithGesture = useCallback(() => {
+    Animated.timing(viewerTranslateY, {
+      toValue: height,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      handleCloseView();
+    });
+  }, [handleCloseView, height, viewerTranslateY]);
+
+  const viewerPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_evt, gestureState) => {
+          const isVertical =
+            Math.abs(gestureState.dy) > Math.abs(gestureState.dx) + 6;
+          return isVertical && gestureState.dy > 12;
+        },
+        onPanResponderGrant: () => {
+          viewerTranslateY.stopAnimation();
+        },
+        onPanResponderMove: (_evt, gestureState) => {
+          // Dampen drag distance so movement feels less jumpy.
+          viewerTranslateY.setValue(Math.max(0, gestureState.dy * 0.88));
+        },
+        onPanResponderRelease: (_evt, gestureState) => {
+          const shouldClose = gestureState.dy > 160 || gestureState.vy > 1.2;
+          if (shouldClose) {
+            closeViewerWithGesture();
+            return;
+          }
+
+          Animated.spring(viewerTranslateY, {
+            toValue: 0,
+            stiffness: 230,
+            damping: 24,
+            mass: 0.95,
+            useNativeDriver: true,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(viewerTranslateY, {
+            toValue: 0,
+            stiffness: 230,
+            damping: 24,
+            mass: 0.95,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [closeViewerWithGesture, viewerTranslateY],
+  );
+
+  const ensureViewerFileDecrypted = useCallback(
+    async (file: VaultFile) => {
+      if (viewerDecryptedUris[file.id]) return;
+
+      try {
+        setViewerLoadingFileId(file.id);
+        const decryptedPath = await decryptFileToCache(file.id);
+        if (!decryptedPath) {
+          throw new Error("Failed to decrypt file");
+        }
+        setViewerDecryptedUris((prev) => ({
+          ...prev,
+          [file.id]: `file://${decryptedPath}`,
+        }));
+      } catch (err) {
+        console.error("[AlbumTab] viewer decrypt error", err);
+      } finally {
+        setViewerLoadingFileId((prev) => (prev === file.id ? null : prev));
+      }
+    },
+    [decryptFileToCache, viewerDecryptedUris],
+  );
 
   const handleDeleteFile = useCallback(
     (fileId: string, fileName: string) => {
@@ -796,11 +891,50 @@ export default function AlbumTab() {
     setCurrentAlbumName(params.albumName ?? "album_4");
   }, [params.albumName]);
 
+  useEffect(() => {
+    if (!isViewerOpen || viewerFiles.length === 0) return;
+
+    const current = viewerFiles[viewerIndex];
+    if (!current) return;
+
+    void ensureViewerFileDecrypted(current);
+
+    if (viewerIndex > 0) {
+      void ensureViewerFileDecrypted(viewerFiles[viewerIndex - 1]);
+    }
+    if (viewerIndex < viewerFiles.length - 1) {
+      void ensureViewerFileDecrypted(viewerFiles[viewerIndex + 1]);
+    }
+  }, [isViewerOpen, viewerFiles, viewerIndex, ensureViewerFileDecrypted]);
+
+  useEffect(() => {
+    if (!isViewerOpen || viewerFiles.length === 0) return;
+    requestAnimationFrame(() => {
+      galleryRef.current?.scrollToIndex({
+        index: viewerIndex,
+        animated: false,
+      });
+    });
+  }, [isViewerOpen, viewerFiles.length, viewerIndex]);
+
+  useEffect(() => {
+    Animated.timing(viewerChromeAnim, {
+      toValue: showViewerChrome ? 1 : 0,
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [showViewerChrome, viewerChromeAnim]);
+
   useFocusEffect(
     useCallback(() => {
       return () => {
         // Ensure transient overlays are closed when leaving the screen.
-        setViewingFile(null);
+        setIsViewerOpen(false);
+        setShowViewerChrome(true);
+        viewerTranslateY.setValue(0);
+        setViewerFiles([]);
+        setViewerIndex(0);
         setSelectedFile(null);
         setFileActionMode(null);
         setPendingImportPath(null);
@@ -812,7 +946,7 @@ export default function AlbumTab() {
         setShowAlbumActions(false);
         setAlbumActionMode(null);
       };
-    }, []),
+    }, [viewerTranslateY]),
   );
 
   const albumCreatedAt =
@@ -926,14 +1060,9 @@ export default function AlbumTab() {
             style={{ width: itemWidth }}
             onPress={() => handleViewFile(file)}
             onLongPress={() => openFileActions(file)}
-            disabled={decryptingFileId === file.id}
           >
             <View className="mb-2 border-2 rounded-2xl border-primary-500 w-full aspect-square items-center justify-center">
-              {decryptingFileId === file.id ? (
-                <ActivityIndicator color={Colors.secondary[500]} />
-              ) : (
-                <Icon.LockIcon size={32} color={Colors.primary[200]} />
-              )}
+              <Icon.LockIcon size={32} color={Colors.primary[200]} />
             </View>
             <Text
               className="text-secondary-500 text-lg font-fira-code text-center"
@@ -1699,37 +1828,175 @@ export default function AlbumTab() {
         </Pressable>
       </Modal>
 
-      {/* Viewing Modal */}
-      <Modal visible={!!viewingFile} animationType="fade" transparent={false}>
-        <View className="flex-1 bg-black" style={{ paddingTop: insets.top }}>
-          <View className="p-4 flex-row justify-end">
-            <TouchableOpacity
-              onPress={handleCloseView}
-              className="p-2 bg-primary-800 rounded-xl"
+      {/* Viewing Gallery Modal */}
+      <Modal
+        visible={isViewerOpen}
+        animationType="none"
+        transparent={false}
+        onRequestClose={handleCloseView}
+      >
+        <View className="flex-1 bg-black">
+          <Animated.View
+            className="absolute inset-0 bg-black"
+            pointerEvents="none"
+            style={{ opacity: viewerBackdropOpacity }}
+          />
+
+          <Animated.View
+            className="flex-1"
+            style={{
+              transform: [
+                { translateY: viewerTranslateY },
+                { scale: viewerScale },
+              ],
+            }}
+            {...viewerPanResponder.panHandlers}
+          >
+            <FlatList
+              ref={galleryRef}
+              data={viewerFiles}
+              keyExtractor={(item) => item.id}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              getItemLayout={(_, index) => ({
+                length: width,
+                offset: width * index,
+                index,
+              })}
+              onMomentumScrollEnd={({ nativeEvent }) => {
+                const next = Math.round(nativeEvent.contentOffset.x / width);
+                if (next >= 0 && next < viewerFiles.length) {
+                  setViewerIndex(next);
+                }
+              }}
+              renderItem={({ item }) => {
+                const uri = viewerDecryptedUris[item.id];
+                return (
+                  <Pressable
+                    style={{ width }}
+                    className="flex-1 items-center justify-center"
+                    onPress={() => setShowViewerChrome((prev) => !prev)}
+                  >
+                    {!uri ? (
+                      <View className="items-center gap-3">
+                        <ActivityIndicator color={Colors.secondary[500]} />
+                        <Text className="text-secondary-500 text-base font-fira-code">
+                          {viewerLoadingFileId === item.id
+                            ? "decrypting..."
+                            : "loading file..."}
+                        </Text>
+                      </View>
+                    ) : item.mime.startsWith("image/") ? (
+                      <Image
+                        source={{ uri }}
+                        className="w-full h-full"
+                        resizeMode="contain"
+                      />
+                    ) : item.mime.startsWith("video/") ? (
+                      <VideoFilePlayer uri={uri} />
+                    ) : (
+                      <WebView
+                        source={{ uri }}
+                        style={{ flex: 1, width }}
+                        originWhitelist={["*"]}
+                      />
+                    )}
+                  </Pressable>
+                );
+              }}
+            />
+
+            <Animated.View
+              pointerEvents={showViewerChrome ? "auto" : "none"}
+              className="absolute left-0 right-0"
+              style={{
+                top: insets.top,
+                opacity: viewerChromeAnim,
+                transform: [
+                  {
+                    translateY: viewerChromeAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-18, 0],
+                    }),
+                  },
+                ],
+              }}
             >
-              <Text className="text-secondary-400 text-lg font-fira-code">
-                /close
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <View className="flex-1">
-            {viewingFile &&
-              (viewingFile.mime.startsWith("image/") ? (
-                <Image
-                  source={{ uri: viewingFile.uri }}
-                  className="w-full h-full"
-                  resizeMode="contain"
-                />
-              ) : viewingFile.mime.startsWith("video/") ? (
-                <VideoFilePlayer uri={viewingFile.uri} />
-              ) : (
-                <WebView
-                  source={{ uri: viewingFile.uri }}
-                  style={{ flex: 1 }}
-                  originWhitelist={["*"]}
-                />
-              ))}
-          </View>
+              <LinearGradient
+                colors={[
+                  "rgba(0,0,0,1)",
+                  "rgba(0,0,0,0.92)",
+                  "rgba(0,0,0,0.72)",
+                  "rgba(0,0,0,0.38)",
+                  "rgba(0,0,0,0.06)",
+                  "rgba(0,0,0,0)",
+                ]}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 280,
+                }}
+              />
+              <View className="px-4 py-3 flex-row items-center justify-between">
+                <Text
+                  className="text-secondary text-base font-fira-code"
+                  numberOfLines={1}
+                  style={{ maxWidth: width - 32 }}
+                >
+                  {viewerFiles[viewerIndex]?.name ?? "file"}
+                </Text>
+              </View>
+            </Animated.View>
+
+            <Animated.View
+              pointerEvents="none"
+              className="absolute left-0 right-0 items-center"
+              style={{
+                bottom: insets.bottom + 10,
+                opacity: viewerChromeAnim,
+                transform: [
+                  {
+                    translateY: viewerChromeAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <LinearGradient
+                colors={[
+                  "rgba(0,0,0,0)",
+                  "rgba(0,0,0,0.08)",
+                  "rgba(0,0,0,0.38)",
+                  "rgba(0,0,0,0.72)",
+                  "rgba(0,0,0,0.92)",
+                  "rgba(0,0,0,1)",
+                ]}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={{
+                  position: "absolute",
+                  bottom: -44,
+                  left: 0,
+                  right: 0,
+                  height: 260,
+                }}
+              />
+              <View className="px-4 py-1">
+                <Text className="text-primary-100 text-sm font-fira-code">
+                  {viewerFiles.length > 0
+                    ? `${viewerIndex + 1} / ${viewerFiles.length}`
+                    : "0 / 0"}
+                </Text>
+              </View>
+            </Animated.View>
+          </Animated.View>
         </View>
       </Modal>
     </SafeAreaView>

@@ -121,6 +121,14 @@ export async function createAlbum(id: string, name: string): Promise<void> {
   ]);
 }
 
+export async function renameAlbum(id: string, name: string): Promise<void> {
+  const database = await getDB();
+  await database.runAsync("UPDATE albums SET name = ? WHERE id = ?", [
+    name,
+    id,
+  ]);
+}
+
 export async function deleteAlbum(id: string): Promise<void> {
   const database = await getDB();
   await database.runAsync("DELETE FROM albums WHERE id = ?", [id]);

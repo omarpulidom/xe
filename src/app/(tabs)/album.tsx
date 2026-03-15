@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import * as Icon from "phosphor-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Colors } from "@/components/colors";
 import { SelectInput } from "@/components/Elements/SelectInput";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -21,8 +21,11 @@ import {
   renameFile,
   moveFileToAlbum,
   getAlbums,
+  renameAlbum,
+  deleteAlbum,
   readExportPackage,
   importExportPackageToAlbum,
+  createEncryptedExportAlbumPackage,
   createEncryptedExportFilePackage,
   getRecipientContacts,
   type RecipientContact,
@@ -104,7 +107,9 @@ function VideoFilePlayer({ uri }: { uri: string }) {
 export default function AlbumTab() {
   const params = useLocalSearchParams<{ albumId: string; albumName: string }>();
   const albumId = params.albumId ?? "";
-  const albumName = params.albumName ?? "album_4";
+  const [currentAlbumName, setCurrentAlbumName] = useState(
+    params.albumName ?? "album_4",
+  );
 
   const [typeValue, setTypeValue] = useState<string | null>(null);
   const [sortValue, setSortValue] = useState<string | null>(null);
@@ -144,11 +149,28 @@ export default function AlbumTab() {
   const [isApplyingAction, setIsApplyingAction] = useState(false);
   const [decryptingFileId, setDecryptingFileId] = useState<string | null>(null);
   const [addingFiles, setAddingFiles] = useState(false);
+  const [showAlbumMenu, setShowAlbumMenu] = useState(false);
+  const [showAlbumActions, setShowAlbumActions] = useState(false);
+  const [albumActionMode, setAlbumActionMode] = useState<
+    "rename" | "details" | "exportEncrypted" | null
+  >(null);
+  const [albumRenameValue, setAlbumRenameValue] = useState("");
+  const [albumExportPassphrase, setAlbumExportPassphrase] = useState("");
+  const [albumExportPassphraseConfirm, setAlbumExportPassphraseConfirm] =
+    useState("");
+  const [menuAnchor, setMenuAnchor] = useState({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  });
+  const menuButtonRef = useRef<View>(null);
 
   const { width } = useWindowDimensions();
   // px-8 = 32px each side (64 total), gap between columns = 12
   const itemWidth = (width - 64 - 12) / 2;
   const keyboardModalGap = 20;
+  const albumMenuWidth = 196;
 
   const loadFiles = useCallback(async () => {
     if (!albumId) return;
@@ -442,6 +464,206 @@ export default function AlbumTab() {
     }
   }, [selectedFile, renameValue, loadFiles, closeFileActions]);
 
+  const closeAlbumActions = useCallback(() => {
+    setShowAlbumMenu(false);
+    setShowAlbumActions(false);
+    setAlbumActionMode(null);
+    setAlbumRenameValue("");
+    setAlbumExportPassphrase("");
+    setAlbumExportPassphraseConfirm("");
+    setIsApplyingAction(false);
+  }, []);
+
+  const openAlbumActions = useCallback(() => {
+    menuButtonRef.current?.measure((_x, _y, menuW, menuH, pageX, pageY) => {
+      setMenuAnchor({ x: pageX, y: pageY, width: menuW, height: menuH });
+      setShowAlbumMenu(true);
+    });
+  }, []);
+
+  const openAlbumRenamePanel = useCallback(() => {
+    setShowAlbumMenu(false);
+    setAlbumRenameValue(currentAlbumName);
+    setAlbumActionMode("rename");
+    setShowAlbumActions(true);
+  }, [currentAlbumName]);
+
+  const openAlbumDetailsPanel = useCallback(() => {
+    setShowAlbumMenu(false);
+    setAlbumActionMode("details");
+    setShowAlbumActions(true);
+  }, []);
+
+  const openAlbumEncryptedExportPanel = useCallback(() => {
+    setShowAlbumMenu(false);
+    setAlbumActionMode("exportEncrypted");
+    setShowAlbumActions(true);
+  }, []);
+
+  const handleRenameAlbum = useCallback(async () => {
+    const nextName = albumRenameValue.trim();
+    if (!nextName) {
+      Alert.alert("Rename Album", "Name cannot be empty.");
+      return;
+    }
+
+    try {
+      setIsApplyingAction(true);
+      await renameAlbum(albumId, nextName);
+      setCurrentAlbumName(nextName);
+      await loadAlbums();
+      closeAlbumActions();
+    } catch (err) {
+      console.error("[AlbumTab] rename album error:", err);
+      Alert.alert("Rename Album", "Could not rename album.");
+    } finally {
+      setIsApplyingAction(false);
+    }
+  }, [albumRenameValue, albumId, loadAlbums, closeAlbumActions]);
+
+  const handleDeleteAlbum = useCallback(() => {
+    Alert.alert(
+      "Delete Album",
+      `Delete "${currentAlbumName}" and all its files?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsApplyingAction(true);
+              await deleteAlbum(albumId);
+              closeAlbumActions();
+              router.push("/(tabs)/vault");
+            } catch (err) {
+              console.error("[AlbumTab] delete album error:", err);
+              Alert.alert("Delete Album", "Could not delete album.");
+            } finally {
+              setIsApplyingAction(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [albumId, closeAlbumActions, currentAlbumName]);
+
+  const handleExportPlainAlbum = useCallback(async () => {
+    if (files.length === 0) {
+      Alert.alert("Export", "This album has no files.");
+      return;
+    }
+
+    try {
+      setIsApplyingAction(true);
+      closeAlbumActions();
+
+      let sharedCount = 0;
+      for (const file of files) {
+        const decryptedFilePath = await decryptFileToCache(file.id);
+        if (!decryptedFilePath) {
+          throw new Error(`Could not decrypt ${file.name}`);
+        }
+
+        const result = await Share.share({
+          url: `file://${decryptedFilePath}`,
+          title: `Export ${file.name}`,
+          message: file.name,
+        });
+
+        if (result.action === Share.dismissedAction) {
+          break;
+        }
+
+        sharedCount += 1;
+      }
+
+      if (sharedCount > 0) {
+        Alert.alert(
+          "Export",
+          `Shared ${sharedCount} file${sharedCount === 1 ? "" : "s"}.`,
+        );
+      }
+    } catch (err) {
+      console.error("[AlbumTab] plain album export error:", err);
+      Alert.alert("Export", "Could not export album.");
+    } finally {
+      setIsApplyingAction(false);
+    }
+  }, [files, decryptFileToCache, closeAlbumActions]);
+
+  const handleExportEncryptedAlbum = useCallback(async () => {
+    if (files.length === 0) {
+      Alert.alert("Export", "This album has no files.");
+      return;
+    }
+
+    const passphrase = albumExportPassphrase.trim();
+    if (passphrase.length < 6) {
+      Alert.alert(
+        "Encrypted Export",
+        "Passphrase must be at least 6 characters.",
+      );
+      return;
+    }
+    if (passphrase !== albumExportPassphraseConfirm.trim()) {
+      Alert.alert("Encrypted Export", "Passphrases do not match.");
+      return;
+    }
+
+    const recipient = recipientContacts.find(
+      (c) => c.id === selectedRecipientId,
+    );
+    if (!recipient) {
+      Alert.alert("Encrypted Export", "Select a recipient contact.");
+      return;
+    }
+
+    const masterKey = getMasterKey();
+    if (!masterKey) {
+      Alert.alert("Encrypted Export", "Vault is locked.");
+      return;
+    }
+
+    try {
+      setIsApplyingAction(true);
+      const packageUri = await createEncryptedExportAlbumPackage({
+        albumId,
+        albumName: currentAlbumName,
+        files,
+        masterKey,
+        passphrase,
+        recipient: {
+          id: recipient.id,
+          name: recipient.name,
+          publicKeyPem: recipient.publicKeyPem,
+        },
+      });
+
+      closeAlbumActions();
+      await Share.share({
+        url: packageUri,
+        title: "Encrypted album export",
+        message: "Calc encrypted album export package",
+      });
+    } catch (err) {
+      console.error("[AlbumTab] encrypted album export error:", err);
+      Alert.alert("Encrypted Export", "Could not export encrypted album.");
+    } finally {
+      setIsApplyingAction(false);
+    }
+  }, [
+    files,
+    albumExportPassphrase,
+    albumExportPassphraseConfirm,
+    recipientContacts,
+    selectedRecipientId,
+    getMasterKey,
+    albumId,
+    currentAlbumName,
+    closeAlbumActions,
+  ]);
+
   const handleSubmitMove = useCallback(async () => {
     if (!selectedFile) return;
     if (!moveAlbumId) {
@@ -570,6 +792,10 @@ export default function AlbumTab() {
     loadRecipientContacts();
   }, [loadFiles, loadAlbums, loadRecipientContacts]);
 
+  useEffect(() => {
+    setCurrentAlbumName(params.albumName ?? "album_4");
+  }, [params.albumName]);
+
   useFocusEffect(
     useCallback(() => {
       return () => {
@@ -582,9 +808,24 @@ export default function AlbumTab() {
         setPendingImportScope(null);
         setImportPassphrase("");
         setIsImportingPackage(false);
+        setShowAlbumMenu(false);
+        setShowAlbumActions(false);
+        setAlbumActionMode(null);
       };
     }, []),
   );
+
+  const albumCreatedAt =
+    albums.find((a) => a.id === albumId)?.created_at ?? null;
+  const albumFileCount = files.length;
+  const albumTotalSize = files.reduce((acc, file) => acc + file.size, 0);
+  const albumImageCount = files.filter((file) =>
+    file.mime.startsWith("image/"),
+  ).length;
+  const albumVideoCount = files.filter((file) =>
+    file.mime.startsWith("video/"),
+  ).length;
+  const albumDocCount = albumFileCount - albumImageCount - albumVideoCount;
 
   const filteredFiles = useMemo(() => {
     let result = [...files];
@@ -622,11 +863,19 @@ export default function AlbumTab() {
           <Text className="text-secondary-400 text-lg font-fira-code">../</Text>
         </TouchableOpacity>
         <Text className="text-secondary text-xl font-geist-mono">
-          {albumName}/
+          {currentAlbumName}/
         </Text>
-        <TouchableOpacity className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center">
-          <Icon.DotsThreeVerticalIcon size={24} color={Colors.secondary[400]} />
-        </TouchableOpacity>
+        <View ref={menuButtonRef} collapsable={false}>
+          <TouchableOpacity
+            onPress={openAlbumActions}
+            className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center"
+          >
+            <Icon.DotsThreeVerticalIcon
+              size={24}
+              color={Colors.secondary[400]}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
       {/* Subheader*/}
       <View className="gap-1 mt-8 flex-row items-center justify-between">
@@ -722,6 +971,321 @@ export default function AlbumTab() {
           </Text>
         )}
       </TouchableOpacity>
+
+      <Modal
+        visible={showAlbumMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAlbumMenu(false)}
+      >
+        <Pressable
+          className="flex-1"
+          style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
+          onPress={() => setShowAlbumMenu(false)}
+        >
+          <Pressable
+            className="bg-primary-500 border border-primary-400 rounded-2xl overflow-hidden"
+            style={{
+              position: "absolute",
+              top: menuAnchor.y + menuAnchor.height + 8,
+              left: Math.min(
+                Math.max(16, menuAnchor.x + menuAnchor.width - albumMenuWidth),
+                width - albumMenuWidth - 16,
+              ),
+              width: albumMenuWidth,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.35,
+              shadowRadius: 18,
+              elevation: 12,
+            }}
+            onPress={() => {}}
+          >
+            <View className="px-4 py-3 border-b border-primary-400 bg-primary-600/60">
+              <Text className="text-primary-100 text-xs font-fira-code">
+                album/menu
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              className="px-4 py-4 border-b border-primary-400"
+              onPress={openAlbumRenamePanel}
+              activeOpacity={0.75}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">
+                rename
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="px-4 py-4 border-b border-primary-400"
+              onPress={() => {
+                setShowAlbumMenu(false);
+                void handleExportPlainAlbum();
+              }}
+              activeOpacity={0.75}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">
+                export_plain
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="px-4 py-4 border-b border-primary-400"
+              onPress={openAlbumEncryptedExportPanel}
+              activeOpacity={0.75}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">
+                export_encrypted
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="px-4 py-4 border-b border-primary-400"
+              onPress={openAlbumDetailsPanel}
+              activeOpacity={0.75}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">
+                album_details
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="px-4 py-4"
+              onPress={() => {
+                setShowAlbumMenu(false);
+                handleDeleteAlbum();
+              }}
+              activeOpacity={0.75}
+            >
+              <Text className="text-red-300 text-lg font-fira-code">
+                delete
+              </Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={showAlbumActions && !!albumActionMode}
+        transparent
+        animationType="fade"
+        onRequestClose={closeAlbumActions}
+      >
+        <Pressable
+          className="flex-1 items-center justify-center px-8"
+          style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
+          onPress={closeAlbumActions}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={keyboardModalGap}
+            className="w-full items-center justify-center"
+            style={{ paddingBottom: keyboardModalGap }}
+          >
+            <Pressable
+              className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl overflow-hidden"
+              onPress={() => {}}
+            >
+              {albumActionMode === "rename" && (
+                <View className="p-4 gap-4">
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    rename album
+                  </Text>
+                  <TextInput
+                    value={albumRenameValue}
+                    onChangeText={setAlbumRenameValue}
+                    placeholder="album_name"
+                    placeholderTextColor={Colors.primary[100]}
+                    autoFocus
+                    className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                    onSubmitEditing={handleRenameAlbum}
+                  />
+                  <View className="flex-row items-center justify-end gap-3">
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                      onPress={closeAlbumActions}
+                      disabled={isApplyingAction}
+                    >
+                      <Text className="text-secondary font-fira-code">
+                        back
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                      onPress={handleRenameAlbum}
+                      disabled={isApplyingAction}
+                    >
+                      <Text className="text-primary-500 font-fira-code-semibold">
+                        save
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {albumActionMode === "details" && (
+                <View className="p-4 gap-4">
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    album details
+                  </Text>
+
+                  <View className="border border-primary-400 rounded-2xl p-3 gap-2 bg-primary-600">
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">name: </Text>
+                      <Text className="text-secondary-200">
+                        {currentAlbumName}
+                      </Text>
+                    </Text>
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">id: </Text>
+                      <Text className="text-secondary-200">{albumId}</Text>
+                    </Text>
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">files: </Text>
+                      <Text className="text-secondary-200">
+                        {albumFileCount}
+                      </Text>
+                    </Text>
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">size: </Text>
+                      <Text className="text-secondary-200">
+                        {formatFileSize(albumTotalSize)} ({albumTotalSize} B)
+                      </Text>
+                    </Text>
+                    <Text className="text-base font-fira-code-light">
+                      <Text className="text-secondary-600">types: </Text>
+                      <Text className="text-secondary-200">
+                        img {albumImageCount} / vid {albumVideoCount} / doc{" "}
+                        {albumDocCount}
+                      </Text>
+                    </Text>
+                    {albumCreatedAt ? (
+                      <Text className="text-base font-fira-code-light">
+                        <Text className="text-secondary-600">created: </Text>
+                        <Text className="text-secondary-200">
+                          {formatTimestamp(albumCreatedAt)}
+                        </Text>
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View className="flex-row items-center justify-end">
+                    <TouchableOpacity
+                      className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                      onPress={closeAlbumActions}
+                    >
+                      <Text className="text-secondary font-fira-code">
+                        back
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {albumActionMode === "exportEncrypted" && (
+                <View className="p-4 gap-4">
+                  <Text className="text-secondary-400 text-lg font-fira-code">
+                    encrypted export
+                  </Text>
+                  <Text className="text-secondary-600 text-base font-fira-code-light">
+                    This passphrase will be required on import.
+                  </Text>
+
+                  {recipientContacts.length === 0 ? (
+                    <>
+                      <View className="rounded-2xl border border-primary-400 bg-primary-600/70 p-4 gap-2">
+                        <Text className="text-secondary font-fira-code-semibold">
+                          no recipients yet
+                        </Text>
+                        <Text className="text-secondary-600 font-fira-code-light text-sm">
+                          Add a recipient in Vault to enable encrypted export.
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center justify-end gap-3">
+                        <TouchableOpacity
+                          className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                          onPress={closeAlbumActions}
+                        >
+                          <Text className="text-secondary font-fira-code">
+                            back
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                          onPress={() => {
+                            closeAlbumActions();
+                            router.push("/(tabs)/vault");
+                          }}
+                        >
+                          <Text className="text-primary-500 font-fira-code-semibold">
+                            go_vault
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <SelectInput
+                        options={recipientContacts.map((recipient) => ({
+                          label: recipient.name,
+                          value: recipient.id,
+                        }))}
+                        value={selectedRecipientId}
+                        onValueChange={setSelectedRecipientId}
+                        placeholder="recipient"
+                        className="w-full"
+                      />
+                      <TextInput
+                        value={albumExportPassphrase}
+                        onChangeText={setAlbumExportPassphrase}
+                        placeholder="passphrase"
+                        placeholderTextColor={Colors.primary[100]}
+                        secureTextEntry
+                        autoFocus
+                        className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                      />
+                      <TextInput
+                        value={albumExportPassphraseConfirm}
+                        onChangeText={setAlbumExportPassphraseConfirm}
+                        placeholder="confirm passphrase"
+                        placeholderTextColor={Colors.primary[100]}
+                        secureTextEntry
+                        className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                        onSubmitEditing={handleExportEncryptedAlbum}
+                      />
+                      <View className="flex-row items-center justify-end gap-3">
+                        <TouchableOpacity
+                          className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                          onPress={closeAlbumActions}
+                          disabled={isApplyingAction}
+                        >
+                          <Text className="text-secondary font-fira-code">
+                            back
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                          onPress={handleExportEncryptedAlbum}
+                          disabled={isApplyingAction}
+                        >
+                          {isApplyingAction ? (
+                            <ActivityIndicator color={Colors.primary[500]} />
+                          ) : (
+                            <Text className="text-primary-500 font-fira-code-semibold">
+                              export
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              )}
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={!!selectedFile && !!fileActionMode}

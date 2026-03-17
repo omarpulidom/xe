@@ -120,6 +120,7 @@ type ImportJob = {
   name: string;
   mime: string;
   uri: string;
+  size?: number;
   status: ImportJobStatus;
   progress: number;
   retries: number;
@@ -151,9 +152,23 @@ function stageProgressByStatus(status: ImportJobStatus): number {
   if (status === "queued") return 0;
   if (status === "copying") return 0.15;
   if (status === "encrypting") return 0.8;
-  if (status === "saving_db") return 0.95;
+  if (status === "saving_db") return 0.98;
   if (status === "done") return 1;
   return 0;
+}
+
+function getImportTimingConfig(size?: number) {
+  const mb = size && size > 0 ? size / (1024 * 1024) : 0;
+  // Scale timings up to about 256MB for smoother large-file perception.
+  const factor = Math.min(1, mb / 256);
+
+  return {
+    minCopyingMs: Math.round(140 + factor * 360),
+    minEncryptingMs: Math.round(900 + factor * 5000),
+    minSavingDbMs: Math.round(240 + factor * 480),
+    tickerStep: Math.max(0.0035, 0.012 - factor * 0.0075),
+    tickerIntervalMs: Math.round(100 + factor * 180),
+  };
 }
 
 function VideoFilePlayer({ uri }: { uri: string }) {
@@ -267,7 +282,7 @@ export default function AlbumTab() {
     "file" | "album" | null
   >(null);
   const [pendingImportEntries, setPendingImportEntries] = useState<
-    Array<{ name: string; mime: string }>
+    Array<{ name: string; mime: string; size?: number }>
   >([]);
   const [importPassphrase, setImportPassphrase] = useState("");
   const [isImportingPackage, setIsImportingPackage] = useState(false);
@@ -291,6 +306,9 @@ export default function AlbumTab() {
   const menuButtonRef = useRef<View>(null);
   const galleryRef = useRef<FlatList<VaultFile>>(null);
   const importBatchesRef = useRef<ImportBatch[]>([]);
+  const importJobTickersRef = useRef<
+    Record<string, ReturnType<typeof setInterval>>
+  >({});
   const dismissBatchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -353,6 +371,11 @@ export default function AlbumTab() {
     [],
   );
 
+  const sleep = useCallback(
+    (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    [],
+  );
+
   useEffect(() => {
     importBatchesRef.current = importBatches;
   }, [importBatches]);
@@ -374,10 +397,69 @@ export default function AlbumTab() {
     [],
   );
 
+  const stopImportJobTicker = useCallback((tickerKey: string) => {
+    const ticker = importJobTickersRef.current[tickerKey];
+    if (!ticker) return;
+    clearInterval(ticker);
+    delete importJobTickersRef.current[tickerKey];
+  }, []);
+
+  const startImportJobTicker = useCallback(
+    (
+      batchId: string,
+      jobId: string,
+      status: ImportJobStatus,
+      from: number,
+      to: number,
+      step = 0.012,
+      intervalMs = 120,
+    ) => {
+      const tickerKey = `${batchId}:${jobId}`;
+      stopImportJobTicker(tickerKey);
+
+      let current = from;
+      const softTarget = Math.max(from, to);
+      const hardTarget = Math.min(0.985, softTarget + 0.08);
+
+      updateImportJob(batchId, jobId, {
+        status,
+        progress: current,
+        errorMessage: undefined,
+      });
+
+      importJobTickersRef.current[tickerKey] = setInterval(() => {
+        if (current < softTarget) {
+          current = Math.min(softTarget, current + step);
+        } else {
+          // Keep a subtle forward motion for long-running jobs after soft target.
+          const tailStep = Math.max(0.0008, (hardTarget - current) * 0.08);
+          current = Math.min(hardTarget, current + tailStep);
+        }
+
+        updateImportJob(batchId, jobId, {
+          status,
+          progress: current,
+        });
+
+        if (current >= hardTarget) {
+          stopImportJobTicker(tickerKey);
+        }
+      }, intervalMs);
+
+      return tickerKey;
+    },
+    [stopImportJobTicker, updateImportJob],
+  );
+
   const createImportBatch = useCallback(
     (
       label: string,
-      entries: Array<{ uri: string; name: string; mime: string }>,
+      entries: Array<{
+        uri: string;
+        name: string;
+        mime: string;
+        size?: number;
+      }>,
     ): { batchId: string; jobs: ImportJob[] } => {
       const batchId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const jobs: ImportJob[] = entries.map((entry, index) => ({
@@ -388,6 +470,7 @@ export default function AlbumTab() {
         name: entry.name,
         mime: entry.mime,
         uri: entry.uri,
+        size: entry.size,
         status: "queued",
         progress: 0,
         retries: 0,
@@ -431,30 +514,62 @@ export default function AlbumTab() {
     [animateLayout],
   );
 
+  const markImportJobDone = useCallback(
+    async (batchId: string, jobId: string) => {
+      updateImportJob(batchId, jobId, {
+        status: "done",
+        progress: stageProgressByStatus("done"),
+        errorMessage: undefined,
+      });
+
+      await sleep(180);
+      await flushUIFrame();
+      completeImportJob(batchId, jobId);
+    },
+    [completeImportJob, flushUIFrame, sleep, updateImportJob],
+  );
+
   const runImportJob = useCallback(
     async (batchId: string, job: ImportJob) => {
+      const timing = getImportTimingConfig(job.size);
+
       updateImportJob(batchId, job.id, {
         status: "copying",
         progress: stageProgressByStatus("copying"),
         errorMessage: undefined,
       });
+      await sleep(timing.minCopyingMs);
 
       try {
-        updateImportJob(batchId, job.id, {
-          status: "encrypting",
-          progress: stageProgressByStatus("encrypting"),
-        });
+        const encryptingStartAt = Date.now();
+        const tickerKey = startImportJobTicker(
+          batchId,
+          job.id,
+          "encrypting",
+          0.2,
+          0.9,
+          timing.tickerStep,
+          timing.tickerIntervalMs,
+        );
 
         await addFileToAlbum(albumId, job.uri, job.mime, job.name);
+
+        const encryptingElapsed = Date.now() - encryptingStartAt;
+        if (encryptingElapsed < timing.minEncryptingMs) {
+          await sleep(timing.minEncryptingMs - encryptingElapsed);
+        }
+
+        stopImportJobTicker(tickerKey);
 
         updateImportJob(batchId, job.id, {
           status: "saving_db",
           progress: stageProgressByStatus("saving_db"),
         });
+        await sleep(timing.minSavingDbMs);
 
-        await loadFiles();
-        completeImportJob(batchId, job.id);
+        await markImportJobDone(batchId, job.id);
       } catch (err) {
+        stopImportJobTicker(`${batchId}:${job.id}`);
         updateImportJob(batchId, job.id, {
           status: "error",
           progress: stageProgressByStatus("encrypting"),
@@ -462,13 +577,26 @@ export default function AlbumTab() {
         });
       }
     },
-    [addFileToAlbum, albumId, completeImportJob, loadFiles, updateImportJob],
+    [
+      addFileToAlbum,
+      albumId,
+      markImportJobDone,
+      sleep,
+      startImportJobTicker,
+      stopImportJobTicker,
+      updateImportJob,
+    ],
   );
 
   const importEntriesAsBatch = useCallback(
     async (
       label: string,
-      entries: Array<{ uri: string; name: string; mime: string }>,
+      entries: Array<{
+        uri: string;
+        name: string;
+        mime: string;
+        size?: number;
+      }>,
     ) => {
       if (entries.length === 0) return;
       const { batchId, jobs } = createImportBatch(label, entries);
@@ -479,17 +607,18 @@ export default function AlbumTab() {
         for (const job of jobs) {
           await runImportJob(batchId, job);
         }
+        await loadFiles();
       } finally {
         setAddingFiles(false);
       }
     },
-    [createImportBatch, flushUIFrame, runImportJob],
+    [createImportBatch, flushUIFrame, loadFiles, runImportJob],
   );
 
   const importPackageAsBatch = useCallback(
     async (
       label: string,
-      entries: Array<{ name: string; mime: string }>,
+      entries: Array<{ name: string; mime: string; size?: number }>,
       execute: (
         trackedAdd: (
           albumId: string,
@@ -517,29 +646,45 @@ export default function AlbumTab() {
           jobs.find((item) => item.status === "queued") ??
           jobs[jobs.length - 1];
         cursor += 1;
+        const timing = getImportTimingConfig(job.size);
 
         updateImportJob(batchId, job.id, {
           status: "copying",
           progress: stageProgressByStatus("copying"),
           errorMessage: undefined,
         });
+        await sleep(timing.minCopyingMs);
 
         try {
-          updateImportJob(batchId, job.id, {
-            status: "encrypting",
-            progress: stageProgressByStatus("encrypting"),
-          });
+          const encryptingStartAt = Date.now();
+          const tickerKey = startImportJobTicker(
+            batchId,
+            job.id,
+            "encrypting",
+            0.2,
+            0.9,
+            timing.tickerStep,
+            timing.tickerIntervalMs,
+          );
 
           await addFileToAlbum(targetAlbumId, plainUri, mime, name);
+
+          const encryptingElapsed = Date.now() - encryptingStartAt;
+          if (encryptingElapsed < timing.minEncryptingMs) {
+            await sleep(timing.minEncryptingMs - encryptingElapsed);
+          }
+
+          stopImportJobTicker(tickerKey);
 
           updateImportJob(batchId, job.id, {
             status: "saving_db",
             progress: stageProgressByStatus("saving_db"),
           });
+          await sleep(timing.minSavingDbMs);
 
-          await loadFiles();
-          completeImportJob(batchId, job.id);
+          await markImportJobDone(batchId, job.id);
         } catch (err) {
+          stopImportJobTicker(`${batchId}:${job.id}`);
           updateImportJob(batchId, job.id, {
             status: "error",
             progress: stageProgressByStatus("encrypting"),
@@ -555,16 +700,20 @@ export default function AlbumTab() {
       try {
         await flushUIFrame();
         await execute(trackedAdd);
+        await loadFiles();
       } finally {
         setAddingFiles(false);
       }
     },
     [
       addFileToAlbum,
-      completeImportJob,
       createImportBatch,
       flushUIFrame,
       loadFiles,
+      markImportJobDone,
+      sleep,
+      startImportJobTicker,
+      stopImportJobTicker,
       updateImportJob,
     ],
   );
@@ -595,11 +744,12 @@ export default function AlbumTab() {
       setAddingFiles(true);
       try {
         await runImportJob(batchId, { ...job, retries: job.retries + 1 });
+        await loadFiles();
       } finally {
         setAddingFiles(false);
       }
     },
-    [animateLayout, runImportJob, updateImportJob],
+    [animateLayout, loadFiles, runImportJob, updateImportJob],
   );
 
   const clearImportBatch = useCallback(
@@ -624,6 +774,7 @@ export default function AlbumTab() {
           mime: asset.type === "video" ? "video/mp4" : "image/jpeg",
           name: asset.fileName || `media_${Date.now()}_${index + 1}`,
           uri: asset.uri.replace("file://", ""),
+          size: asset.fileSize,
         }));
         await importEntriesAsBatch("media_import", entries);
       }
@@ -648,6 +799,7 @@ export default function AlbumTab() {
           mime: asset.mimeType ?? "application/octet-stream",
           name: asset.name ?? `doc_${Date.now()}_${index + 1}`,
           uri: asset.uri.replace("file://", ""),
+          size: asset.size,
         }));
         await importEntriesAsBatch("documents_import", entries);
       }
@@ -689,11 +841,13 @@ export default function AlbumTab() {
               {
                 name: pkg.file.name,
                 mime: pkg.file.mime,
+                size: pkg.file.size,
               },
             ]
           : pkg.files.map((entry) => ({
               name: entry.meta.name,
               mime: entry.meta.mime,
+              size: entry.meta.size,
             }));
 
       if (pkg.mode === "plain") {
@@ -1488,8 +1642,13 @@ export default function AlbumTab() {
         clearTimeout(dismissBatchTimeoutRef.current);
         dismissBatchTimeoutRef.current = null;
       }
+
+      const tickerKeys = Object.keys(importJobTickersRef.current);
+      for (const tickerKey of tickerKeys) {
+        stopImportJobTicker(tickerKey);
+      }
     };
-  }, []);
+  }, [stopImportJobTicker]);
 
   return (
     <SafeAreaView className="flex-1 px-8 pt-8 bg-primary">

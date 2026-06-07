@@ -12,3 +12,4 @@ export * from "./DebugBar";
 export * from "./ConnectionBanner";
 export * from "./MessageActionSheet";
 export * from "./ScrollToBottomBadge";
+export * from "./ReplyBar";

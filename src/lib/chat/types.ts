@@ -19,6 +19,13 @@ export type MessageVariant = "mine" | "theirs" | "system";
 
 export type ConnectionStatus = "p2p" | "relay" | "offline";
 
+export type ReplyRef = {
+  id: string;
+  authorId: string;
+  authorAlias: string;
+  text: string;
+};
+
 export type Message = {
   id: string;
   threadId: string;
@@ -32,6 +39,7 @@ export type Message = {
   status: MessageStatus;
   command?: CommandKind;
   isCanary?: boolean;
+  replyTo?: ReplyRef;
 };
 
 export type Contact = {

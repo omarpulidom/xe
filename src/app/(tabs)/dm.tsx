@@ -19,6 +19,7 @@ import {
   type MessageAction,
 } from "@/components/chat/MessageActionSheet";
 import { MessageList } from "@/components/chat/MessageList";
+import { ReplyBar } from "@/components/chat/ReplyBar";
 import { StatusDot } from "@/components/chat/StatusDot";
 import { parseCommand } from "@/lib/chat/commands";
 import {
@@ -29,7 +30,7 @@ import {
 } from "@/lib/chat/mock";
 import { useChatStore } from "@/store/chat.store";
 import { randomUUID } from "react-native-quick-crypto";
-import type { Message } from "@/lib/chat/types";
+import type { Message, ReplyRef } from "@/lib/chat/types";
 
 const MY_ID = MOCK_MY_ID;
 const THREAD_ID = MOCK_THREAD_ID;
@@ -41,6 +42,7 @@ export default function DMTab() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
+  const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
 
   const messages = useChatStore((s) => s.messages[THREAD_ID] ?? []);
   const contacts = useChatStore((s) => s.contacts);
@@ -77,6 +79,7 @@ export default function DMTab() {
         text,
         createdAt: Date.now(),
         status: "sending",
+        replyTo: replyTo ?? undefined,
       };
 
       const parsed = parseCommand(text);
@@ -97,13 +100,14 @@ export default function DMTab() {
 
       addMessage(newMessage);
       setDraft("");
+      setReplyTo(null);
 
       setTimeout(() => {
         updateMessage(THREAD_ID, id, { status: "delivered" });
         setIsSending(false);
       }, 500);
     },
-    [addMessage, updateMessage],
+    [addMessage, updateMessage, replyTo],
   );
 
   const handleSend = useCallback(() => {
@@ -166,19 +170,19 @@ export default function DMTab() {
         Vibration.vibrate(10);
         return;
       }
-      if (action === "reply" || action === "quote") {
+      if (action === "reply") {
         const alias =
           m.authorId === MY_ID
             ? MY_ALIAS
             : (contacts.find((c) => c.id === m.authorId)?.alias ??
               "unknown");
-        const body = (m.text ?? "").split("\n")[0];
-        if (action === "quote") {
-          const block = `> <@${alias}>: ${body}\n`;
-          setDraft((prev) => `${prev}${prev ? "\n" : ""}${block}`);
-        } else {
-          setDraft((prev) => `${prev}${prev ? " " : ""}↳ @${alias}: `);
-        }
+        const snippet = (m.text ?? "").split("\n")[0].slice(0, 120);
+        setReplyTo({
+          id: m.id,
+          authorId: m.authorId,
+          authorAlias: alias,
+          text: snippet,
+        });
         Vibration.vibrate(10);
       }
     },
@@ -255,13 +259,21 @@ export default function DMTab() {
               currentStatus={partnerStatus}
             />
           )}
-          <CommandInput
-            value={draft}
-            onChange={setDraft}
-            onSubmit={handleSend}
-            myAlias={MY_ALIAS}
-            isSending={isSending}
-          />
+          <View className="-mx-8 border-t border-primary-400">
+            {replyTo && (
+              <ReplyBar
+                replyTo={replyTo}
+                onCancel={() => setReplyTo(null)}
+              />
+            )}
+            <CommandInput
+              value={draft}
+              onChange={setDraft}
+              onSubmit={handleSend}
+              myAlias={MY_ALIAS}
+              isSending={isSending}
+            />
+          </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
       <MessageActionSheet

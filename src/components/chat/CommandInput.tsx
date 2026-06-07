@@ -86,7 +86,7 @@ export function CommandInput({
       : "border-primary-400";
 
   return (
-    <View className="-mx-8 border-t border-primary-400 py-2">
+    <View className="py-2">
       {showPalette && (
         <CommandPalette
           query={getCommandQuery(value)}

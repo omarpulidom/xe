@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   Animated,
   Modal,
@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import type { Message } from "@/lib/chat/types";
 
-export type MessageAction = "reply" | "quote" | "copy" | "delete";
+export type MessageAction = "reply" | "copy" | "delete";
 
 type Props = {
   visible: boolean;
@@ -30,13 +30,7 @@ const ACTIONS: ActionConfig[] = [
   {
     kind: "reply",
     label: "↳ reply",
-    hint: "insert as inline reply",
-    color: "#f0f0f0",
-  },
-  {
-    kind: "quote",
-    label: "▎ quote",
-    hint: "insert as blockquote",
+    hint: "attach as quoted reply",
     color: "#f0f0f0",
   },
   {

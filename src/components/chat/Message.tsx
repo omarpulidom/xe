@@ -131,6 +131,28 @@ export function Message({
           />
         </View>
       )}
+      {message.replyTo && !isGlitching && (
+        <View className="flex-row items-stretch mb-1 ml-1">
+          <View
+            className="w-[2px] mr-2 rounded-sm"
+            style={{ backgroundColor: "#f0f0f0" }}
+          />
+          <View className="flex-1 pb-0.5">
+            <Text
+              className="text-[11px] font-fira-code"
+              style={{ color: "#f0f0f0" }}
+            >
+              @{message.replyTo.authorAlias}
+            </Text>
+            <Text
+              className="text-xs text-primary-100 font-fira-code-light"
+              numberOfLines={2}
+            >
+              {message.replyTo.text || "(empty)"}
+            </Text>
+          </View>
+        </View>
+      )}
       {isGlitching ? (
         <View className="flex-row items-start gap-1">
           <Text className="text-primary-100 text-sm font-fira-code tabular-nums mt-0.5">

@@ -212,12 +212,10 @@ function renderRow(
 ) {
   if (row.type === "date") {
     return (
-      <View className="flex-row items-center gap-2 my-3">
-        <View className="flex-1 h-px bg-primary-400" />
+      <View className="my-3 items-center">
         <Text className="text-xs text-primary-100 font-fira-code">
           {formatDate(row.date)}
         </Text>
-        <View className="flex-1 h-px bg-primary-400" />
       </View>
     );
   }

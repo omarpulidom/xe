@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import { formatDate, isSameDay } from "@/lib/chat/format";
+import { useChatStore } from "@/store/chat.store";
 import type { Contact, Message, MessageVariant } from "@/lib/chat/types";
 import { Message as MessageBubble } from "./Message";
 
@@ -67,6 +68,26 @@ export function MessageList({
       });
     }
   }, [messages, isReady]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const store = useChatStore.getState();
+      for (const threadId of Object.keys(store.messages)) {
+        for (const msg of store.messages[threadId]) {
+          if (
+            (msg.status === "read" || msg.status === "delivered") &&
+            msg.expiresAt &&
+            msg.expiresAt <= now
+          ) {
+            const next = msg.burnOnRead ? "burned" : "expired";
+            store.updateMessage(threadId, msg.id, { status: next });
+          }
+        }
+      }
+    }, 250);
+    return () => clearInterval(interval);
+  }, []);
 
   const visibleRows = useMemo(() => {
     if (!isReady) return allRows;

@@ -1,12 +1,13 @@
-import Animated, {
-  SlideInLeft,
-  SlideInRight,
-} from "react-native-reanimated";
+import { useEffect, useRef, useState } from "react";
+import Animated, { SlideInLeft, SlideInRight } from "react-native-reanimated";
 import { Text, View } from "react-native";
 import { formatTime } from "@/lib/chat/format";
 import { parseCommand } from "@/lib/chat/commands";
+import { useChatStore } from "@/store/chat.store";
 import type { Message, MessageVariant } from "@/lib/chat/types";
 import { TypewriterText } from "./TypewriterText";
+import { GlitchText } from "./GlitchText";
+import { BurnRing } from "./BurnRing";
 
 type Props = {
   message: Message;
@@ -15,7 +16,51 @@ type Props = {
   animate: boolean;
 };
 
+const GLITCH_DURATION_MS = 420;
+
 export function Message({ message, variant, authorAlias, animate }: Props) {
+  const [isGlitching, setIsGlitching] = useState(false);
+  const prevStatus = useRef(message.status);
+  const processedRef = useRef(false);
+  const removeMessage = useChatStore((s) => s.removeMessage);
+
+  useEffect(() => {
+    if (processedRef.current) {
+      prevStatus.current = message.status;
+      return;
+    }
+
+    const wasActive =
+      prevStatus.current === "read" || prevStatus.current === "delivered";
+    const nowDestroyed =
+      message.status === "burned" || message.status === "expired";
+
+    if (wasActive && nowDestroyed && !isGlitching) {
+      setIsGlitching(true);
+      processedRef.current = true;
+    } else if (!wasActive && nowDestroyed) {
+      removeMessage(message.threadId, message.id);
+      processedRef.current = true;
+    }
+
+    prevStatus.current = message.status;
+  }, [message.status, isGlitching, removeMessage]);
+
+  useEffect(() => {
+    if (!isGlitching) return;
+    const timer = setTimeout(() => {
+      removeMessage(message.threadId, message.id);
+    }, GLITCH_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [isGlitching, removeMessage, message.threadId, message.id]);
+
+  const isDestroyed =
+    message.status === "burned" || message.status === "expired";
+
+  if (isDestroyed && !isGlitching) {
+    return null;
+  }
+
   if (variant === "system") {
     return (
       <View className="items-center my-1">
@@ -26,13 +71,9 @@ export function Message({ message, variant, authorAlias, animate }: Props) {
     );
   }
 
-  const isDestroyed =
-    message.status === "burned" || message.status === "expired";
   const parsed = message.text ? parseCommand(message.text) : null;
   const body = parsed?.body ?? "";
-  const displayText = isDestroyed
-    ? "█".repeat(8)
-    : body || message.text || "";
+  const originalText = body || message.text || "";
 
   const isMine = variant === "mine";
   const entering = animate
@@ -41,35 +82,80 @@ export function Message({ message, variant, authorAlias, animate }: Props) {
       : SlideInLeft.duration(180)
     : undefined;
 
-  const textClass = "text-base font-fira-code-light flex-shrink";
-  const textColor = isDestroyed
-    ? "text-primary-300"
-    : isMine
-      ? "text-secondary"
-      : "text-secondary-200";
+  const textColor = isMine ? "text-secondary" : "text-secondary-200";
+
+  const totalMs = message.burnOnRead
+    ? (message.burnDurationSec ?? 5) * 1000
+    : message.expiresAt
+      ? Math.max(0, message.expiresAt - message.createdAt)
+      : 0;
+
+  const showBurnRing = totalMs > 0 && !isDestroyed;
+
+  const isCanaryOpened =
+    message.isCanary &&
+    (message.status === "read" ||
+      message.status === "burned" ||
+      message.status === "expired");
+  const canaryDotColor = isCanaryOpened ? "#3bff7d" : "#f5ac58";
 
   return (
     <Animated.View
       entering={entering}
-      className="flex-row items-start justify-start gap-1 mb-0.5"
+      className="mb-1.5"
     >
-      <Text className="text-primary-100 text-sm font-fira-code">
-        {formatTime(message.createdAt)}
-      </Text>
-      <Text className="text-secondary-600 text-base font-fira-code">
-        {"<"}
-        <Text className="text-secondary">@</Text>
-        {authorAlias}
-        {">"}
-      </Text>
-      {animate ? (
-        <TypewriterText
-          text={displayText}
-          enabled={animate}
-          className={`${textClass} ${textColor}`}
-        />
+      {showBurnRing && (
+        <View className="mb-0.5">
+          <BurnRing
+            createdAt={message.createdAt}
+            totalMs={totalMs}
+            label={message.burnOnRead ? "burn" : "ttl"}
+          />
+        </View>
+      )}
+      {isGlitching ? (
+        <View className="flex-row items-start gap-1">
+          <Text className="text-primary-100 text-sm font-fira-code tabular-nums mt-0.5">
+            {formatTime(message.createdAt)}
+          </Text>
+          <Text className="text-secondary-600 text-sm font-fira-code mt-0.5">
+            {"<"}
+            <Text className="text-secondary">@</Text>
+            {authorAlias}
+            {">"}
+          </Text>
+          <GlitchText
+            text={originalText}
+            active={isGlitching}
+            className={`text-base font-fira-code-light ${textColor} flex-1`}
+          />
+        </View>
       ) : (
-        <Text className={`${textClass} ${textColor}`}>{displayText}</Text>
+        <Text className={`text-base font-fira-code-light ${textColor}`}>
+          <Text className="text-primary-100 text-sm font-fira-code tabular-nums">
+            {formatTime(message.createdAt)}
+          </Text>
+          {" "}
+          <Text className="text-secondary-600 text-sm font-fira-code">
+            {"<"}
+            <Text className="text-secondary">@</Text>
+            {authorAlias}
+            {">"}
+          </Text>
+          {" "}
+          {animate ? (
+            <TypewriterText
+              text={originalText}
+              enabled={animate}
+              className="text-base font-fira-code-light"
+            />
+          ) : (
+            originalText
+          )}
+          {message.isCanary && !isDestroyed && (
+            <Text style={{ color: canaryDotColor }}> ●</Text>
+          )}
+        </Text>
       )}
     </Animated.View>
   );

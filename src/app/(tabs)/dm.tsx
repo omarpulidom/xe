@@ -78,6 +78,8 @@ export default function DMTab() {
       } else if (parsed.kind === "burn") {
         newMessage.burnOnRead = true;
         newMessage.burnDurationSec = parsed.durationSec ?? 5;
+        newMessage.expiresAt =
+          Date.now() + (parsed.durationSec ?? 5) * 1000;
       } else if (parsed.kind === "ttl") {
         newMessage.expiresAt =
           Date.now() + (parsed.durationSec ?? 300) * 1000;

@@ -96,8 +96,11 @@ function postMockMessage(threadId: string, text: string, authorId: string) {
     } else if (parsed.kind === "burn") {
       message.burnOnRead = true;
       message.burnDurationSec = parsed.durationSec ?? 5;
+      message.expiresAt =
+        Date.now() + (parsed.durationSec ?? 5) * 1000;
     } else if (parsed.kind === "ttl") {
-      message.expiresAt = Date.now() + (parsed.durationSec ?? 300) * 1000;
+      message.expiresAt =
+        Date.now() + (parsed.durationSec ?? 300) * 1000;
     }
   }
 

@@ -16,8 +16,8 @@ import { parseCommand } from "@/lib/chat/commands";
 import {
   MOCK_MY_ID,
   MOCK_THREAD_ID,
-  startMavriMockIfEmpty,
-  startMavriMockReplay,
+  startUrielMockIfEmpty,
+  startUrielMockReplay,
 } from "@/lib/chat/mock";
 import { useChatStore } from "@/store/chat.store";
 import { randomUUID } from "react-native-quick-crypto";
@@ -26,7 +26,7 @@ import type { Message } from "@/lib/chat/types";
 const MY_ID = MOCK_MY_ID;
 const THREAD_ID = MOCK_THREAD_ID;
 const MY_ALIAS = "pm";
-const PARTNER_ALIAS = "mavri";
+const PARTNER_ALIAS = "uriel";
 
 export default function DMTab() {
   const [draft, setDraft] = useState("");
@@ -40,7 +40,7 @@ export default function DMTab() {
   const clearThread = useChatStore((s) => s.clearThread);
 
   useEffect(() => {
-    startMavriMockIfEmpty();
+    startUrielMockIfEmpty();
   }, []);
 
   useEffect(() => {
@@ -94,7 +94,7 @@ export default function DMTab() {
   }, [draft, addMessage, updateMessage, clearThread]);
 
   const handleReplay = useCallback(() => {
-    startMavriMockReplay();
+    startUrielMockReplay();
   }, []);
 
   return (
@@ -125,12 +125,15 @@ export default function DMTab() {
           </View>
           <TouchableOpacity
             onPress={handleReplay}
-            className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center"
+            className="bg-primary-500 h-10 px-3 rounded-xl flex-row items-center justify-center gap-1"
           >
             <Icon.ArrowClockwiseIcon
-              size={20}
+              size={14}
               color={Colors.secondary[400]}
             />
+            <Text className="text-secondary-400 text-sm font-fira-code">
+              replay
+            </Text>
           </TouchableOpacity>
         </View>
         <View className="h-px bg-primary-400 mt-4" />

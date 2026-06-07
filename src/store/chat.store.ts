@@ -36,8 +36,8 @@ const initialContacts: Contact[] = [
     lastSeen: Date.now(),
   },
   {
-    id: "mavri",
-    alias: "mavri",
+    id: "uriel",
+    alias: "uriel",
     fingerprint: "9c4f7e2a8b1d3f5c",
     status: "p2p",
     lastSeen: Date.now(),
@@ -131,6 +131,25 @@ export const useChatStore = create<ChatStore>()(
     {
       name: CHAT_STORE_NAME,
       storage: createJSONStorage(() => zustandMMKVStorage),
+      partialize: (state) => ({
+        messages: state.messages,
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as
+          | { messages?: Record<string, Message[]> }
+          | undefined;
+        const rawMessages = persisted?.messages ?? {};
+        const migrated: Record<string, Message[]> = {};
+        for (const [threadId, msgs] of Object.entries(rawMessages)) {
+          migrated[threadId] = msgs.map((m) =>
+            m.authorId === "mavri" ? { ...m, authorId: "uriel" } : m,
+          );
+        }
+        return {
+          ...currentState,
+          messages: migrated,
+        };
+      },
     },
   ),
 );

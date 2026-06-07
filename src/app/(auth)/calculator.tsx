@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
-  Alert,
   Text,
   TouchableOpacity,
   View,
@@ -33,8 +32,7 @@ const CALC_BUTTONS = [
 
 export default function CalculatorScreen() {
   const router = useRouter();
-  const { isSetup, setup, unlock, isLockedOut, failedAttempts, resetAllData } =
-    useVault();
+  const { isSetup, setup, unlock, isLockedOut, failedAttempts } = useVault();
   const [display, setDisplay] = useState("0");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -314,7 +312,8 @@ export default function CalculatorScreen() {
         )}
       </View>
 
-      {/* ⚠️ DEV RESET — remove before release */}
+      {/*
+      ⚠️ DEV RESET — remove before release
       <TouchableOpacity
         onPress={() =>
           Alert.alert("⚠️ DEV RESET", "Wipe ALL data? This cannot be undone.", [
@@ -334,6 +333,7 @@ export default function CalculatorScreen() {
           ⚠️ DEV RESET
         </Text>
       </TouchableOpacity>
+      */}
 
       {/* Buttons Grid */}
       <View className="gap-3 pb-8">

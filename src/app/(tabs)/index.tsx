@@ -1,4 +1,4 @@
-import { AntDesign, Entypo } from "@expo/vector-icons";
+import { AntDesign /* Entypo */ } from "@expo/vector-icons";
 import {
   Modal,
   Pressable,
@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useCallback, useEffect } from "react";
 
 import { Colors } from "@/components/colors";
-import { SelectInput } from "@/components/Elements/SelectInput";
+/* import { SelectInput } from "@/components/Elements/SelectInput"; */
 import { useVault } from "@/components/Providers/VaultProvider";
 import {
   ensureLocalRecipientIdentity,
@@ -21,6 +21,7 @@ import {
   type LocalRecipientIdentity,
 } from "@/lib/vault";
 
+/*
 const data = [
   {
     label: "[all]",
@@ -39,6 +40,7 @@ const data = [
     value: "chat",
   },
 ];
+*/
 
 function formatTimestamp(ts: number | null): string {
   if (!ts) return "[--/--/-- --:--:--]";
@@ -49,7 +51,7 @@ function formatTimestamp(ts: number | null): string {
 
 export default function HomeTab() {
   const { lastUnlockTime } = useVault();
-  const [value, setValue] = useState<string | null>(null);
+  /* const [value, setValue] = useState<string | null>(null); */
   const [fileCount, setFileCount] = useState(0);
   const [albumCount, setAlbumCount] = useState(0);
   const [localRecipientIdentity, setLocalRecipientIdentity] =
@@ -113,7 +115,7 @@ export default function HomeTab() {
     : "loading...";
 
   return (
-    <SafeAreaView className="px-8 pt-8 bg-primary">
+    <SafeAreaView className="flex-1 px-8 pt-8 bg-primary">
       {/* Header*/}
       <View className="gap-1 mb-4">
         <View className="flex-row items-center gap-2">
@@ -128,7 +130,10 @@ export default function HomeTab() {
           {"//"}v0.0.1-alpha
         </Text>
       </View>
-      <ScrollView>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 80 }}
+      >
         {/* Security Status */}
         <View className="border border-primary-400 rounded-2xl p-6 mt-4 gap-6">
           <View className="gap-3">
@@ -196,7 +201,8 @@ export default function HomeTab() {
             </TouchableOpacity>
           </View>
         </View>
-        {/* Security Settings */}
+        {/*
+        Security Settings (mock card)
         <View className="border border-primary-400 rounded-2xl p-6 mt-6 gap-6">
           <View className="gap-3">
             <View className="flex-row justify-between">
@@ -234,7 +240,9 @@ export default function HomeTab() {
             </View>
           </View>
         </View>
+        */}
         {/* Logs */}
+        {/*
         <View>
           <View className="mt-8 flex-row items-center justify-between">
             <View className="flex-row items-center">
@@ -274,7 +282,6 @@ export default function HomeTab() {
             </TouchableOpacity>
           </View>
 
-          {/* Logs messages */}
           <View className="mt-6 gap-4">
             <View className="flex-col gap-2">
               <View className="flex-row items-center justify-between px-2">
@@ -307,9 +314,10 @@ export default function HomeTab() {
             </View>
           </View>
 
-          {/* Spacer */}
+
+       
           <View className="h-20" />
-        </View>
+         </View> */}
       </ScrollView>
 
       <Modal

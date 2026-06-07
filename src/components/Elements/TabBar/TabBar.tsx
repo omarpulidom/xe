@@ -105,7 +105,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           })}
 
           {/* Screen 3: Chat */}
-          {/*
+
           {state.routes.map((route, index) => {
             if (route.name !== "chat") return null;
             const isFocused = state.index === index;
@@ -148,7 +148,6 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               </TouchableOpacity>
             );
           })}
-          */}
 
           {/* Screen 4: Settings */}
           {state.routes.map((route, index) => {

@@ -171,10 +171,30 @@ function getImportTimingConfig(size?: number) {
   };
 }
 
-function VideoFilePlayer({ uri }: { uri: string }) {
+function VideoFilePlayer({
+  uri,
+  shouldPlay,
+}: {
+  uri: string;
+  shouldPlay: boolean;
+}) {
   const player = useVideoPlayer(uri, (p) => {
-    p.play();
+    if (shouldPlay) {
+      p.play();
+    } else {
+      p.pause();
+    }
   });
+
+  useEffect(() => {
+    if (shouldPlay) {
+      player.play();
+      return;
+    }
+
+    player.pause();
+  }, [player, shouldPlay]);
+
   return (
     <View style={{ width: "100%", height: "100%" }}>
       <VideoView
@@ -306,6 +326,7 @@ export default function AlbumTab() {
   const menuButtonRef = useRef<View>(null);
   const galleryRef = useRef<FlatList<VaultFile>>(null);
   const importBatchesRef = useRef<ImportBatch[]>([]);
+  const fileRefreshQueueRef = useRef<Promise<void>>(Promise.resolve());
   const importJobTickersRef = useRef<
     Record<string, ReturnType<typeof setInterval>>
   >({});
@@ -396,6 +417,17 @@ export default function AlbumTab() {
     },
     [],
   );
+
+  const queueFileListRefresh = useCallback(() => {
+    fileRefreshQueueRef.current = fileRefreshQueueRef.current
+      .then(async () => {
+        await loadFiles();
+        await flushUIFrame();
+      })
+      .catch((err) => {
+        console.error("[AlbumTab] queueFileListRefresh error:", err);
+      });
+  }, [flushUIFrame, loadFiles]);
 
   const stopImportJobTicker = useCallback((tickerKey: string) => {
     const ticker = importJobTickersRef.current[tickerKey];
@@ -568,6 +600,7 @@ export default function AlbumTab() {
         await sleep(timing.minSavingDbMs);
 
         await markImportJobDone(batchId, job.id);
+        queueFileListRefresh();
       } catch (err) {
         stopImportJobTicker(`${batchId}:${job.id}`);
         updateImportJob(batchId, job.id, {
@@ -585,6 +618,7 @@ export default function AlbumTab() {
       startImportJobTicker,
       stopImportJobTicker,
       updateImportJob,
+      queueFileListRefresh,
     ],
   );
 
@@ -607,6 +641,7 @@ export default function AlbumTab() {
         for (const job of jobs) {
           await runImportJob(batchId, job);
         }
+        await fileRefreshQueueRef.current;
         await loadFiles();
       } finally {
         setAddingFiles(false);
@@ -683,6 +718,7 @@ export default function AlbumTab() {
           await sleep(timing.minSavingDbMs);
 
           await markImportJobDone(batchId, job.id);
+          queueFileListRefresh();
         } catch (err) {
           stopImportJobTicker(`${batchId}:${job.id}`);
           updateImportJob(batchId, job.id, {
@@ -700,6 +736,7 @@ export default function AlbumTab() {
       try {
         await flushUIFrame();
         await execute(trackedAdd);
+        await fileRefreshQueueRef.current;
         await loadFiles();
       } finally {
         setAddingFiles(false);
@@ -715,6 +752,7 @@ export default function AlbumTab() {
       startImportJobTicker,
       stopImportJobTicker,
       updateImportJob,
+      queueFileListRefresh,
     ],
   );
 
@@ -2636,6 +2674,8 @@ export default function AlbumTab() {
               }}
               renderItem={({ item }) => {
                 const uri = viewerDecryptedUris[item.id];
+                const isActiveVideoSlide =
+                  isViewerOpen && viewerFiles[viewerIndex]?.id === item.id;
                 return (
                   <Pressable
                     style={{ width }}
@@ -2659,7 +2699,10 @@ export default function AlbumTab() {
                       />
                     ) : item.mime.startsWith("video/") ? (
                       <View className="w-full h-full">
-                        <VideoFilePlayer uri={uri} />
+                        <VideoFilePlayer
+                          uri={uri}
+                          shouldPlay={isActiveVideoSlide}
+                        />
                       </View>
                     ) : (
                       <WebView

@@ -57,3 +57,54 @@ export function parseDuration(spec: string): number | null {
 }
 
 export const COMMAND_REGEX_FOR_HIGHLIGHT = /^\/(\w+)/;
+export const COMMAND_QUERY_RE = /^\/(\w*)/;
+
+export type CommandMeta = {
+  name: string;
+  description: string;
+  example: string;
+};
+
+export const COMMAND_LIST: CommandMeta[] = [
+  {
+    name: "burn",
+    description: "self-destruct on read",
+    example: "/burn 30s secret",
+  },
+  {
+    name: "steg",
+    description: "hide text in image",
+    example: "/steg secret",
+  },
+  {
+    name: "canary",
+    description: "alerts sender if read",
+    example: "/canary bait",
+  },
+  {
+    name: "ttl",
+    description: "expires after duration",
+    example: "/ttl 5m message",
+  },
+  {
+    name: "clear",
+    description: "wipe local thread",
+    example: "/clear",
+  },
+  {
+    name: "panic",
+    description: "lock app now",
+    example: "/panic",
+  },
+];
+
+export function getCommandQuery(input: string): string {
+  const match = input.match(COMMAND_QUERY_RE);
+  return match ? match[1] : "";
+}
+
+export function filterCommands(query: string): CommandMeta[] {
+  if (!query) return COMMAND_LIST;
+  const q = query.toLowerCase();
+  return COMMAND_LIST.filter((c) => c.name.startsWith(q));
+}

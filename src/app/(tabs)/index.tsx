@@ -295,7 +295,7 @@ export default function HomeTab() {
               <Text className="text-secondary-600 text-lg font-fira-code">
                 <Text className="text-secondary">2</Text> new{" "}
                 <Text className="text-secondary">messages</Text> from{" "}
-                <Text className="text-secondary">mavri</Text>
+                <Text className="text-secondary">uriel</Text>
               </Text>
             </View>
             <View className="flex-col gap-2">

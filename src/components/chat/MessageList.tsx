@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import { formatDate, isSameDay } from "@/lib/chat/format";
 import type { Contact, Message, MessageVariant } from "@/lib/chat/types";
@@ -34,15 +34,52 @@ export function MessageList({
   systemAuthorId = "system",
   emptyText = "// no messages yet",
 }: Props) {
-  const rows = useMemo(
+  const allRows = useMemo(
     () => buildRows(messages, myId, systemAuthorId),
     [messages, myId, systemAuthorId],
   );
 
-  if (rows.length === 0) {
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    for (const m of messages) {
+      seenIdsRef.current.add(m.id);
+    }
+    setIsReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isReady) return;
+    const detected = new Set<string>();
+    for (const m of messages) {
+      if (!seenIdsRef.current.has(m.id)) {
+        seenIdsRef.current.add(m.id);
+        detected.add(m.id);
+      }
+    }
+    if (detected.size > 0) {
+      setNewIds((prev) => {
+        const next = new Set(prev);
+        for (const id of detected) next.add(id);
+        return next;
+      });
+    }
+  }, [messages, isReady]);
+
+  const visibleRows = useMemo(() => {
+    if (!isReady) return allRows;
+    return allRows.filter((r) => {
+      if (r.type === "date") return true;
+      return seenIdsRef.current.has(r.msg.id) || newIds.has(r.msg.id);
+    });
+  }, [allRows, isReady, newIds]);
+
+  if (visibleRows.length === 0) {
     return (
       <View className="flex-1 items-center justify-center">
-        <Text className="text-primary-100 text-lg font-fira-code">
+        <Text className="text-primary-100 text-sm font-fira-code">
           {emptyText}
         </Text>
       </View>
@@ -51,19 +88,26 @@ export function MessageList({
 
   return (
     <FlatList
-      data={rows}
-      keyExtractor={(r) => r.key}
-      renderItem={({ item }) => renderRow(item, contacts)}
-      contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 24 }}
+      data={visibleRows}
+      keyExtractor={(r) => {
+        if (r.type === "date") return r.key;
+        return newIds.has(r.msg.id) ? `${r.msg.id}-anim` : r.msg.id;
+      }}
+      renderItem={({ item }) => renderRow(item, contacts, newIds)}
+      contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 16 }}
       showsVerticalScrollIndicator={false}
     />
   );
 }
 
-function renderRow(row: Row, contacts: Contact[]) {
+function renderRow(
+  row: Row,
+  contacts: Contact[],
+  newIds: Set<string>,
+) {
   if (row.type === "date") {
     return (
-      <Text className="text-center text-primary-100 text-lg font-fira-code my-6">
+      <Text className="text-center text-primary-100 text-sm font-fira-code my-3">
         {formatDate(row.date)}
       </Text>
     );
@@ -75,15 +119,22 @@ function renderRow(row: Row, contacts: Contact[]) {
         message={row.msg}
         variant="system"
         authorAlias=""
+        animate={false}
       />
     );
   }
 
   const contact = contacts.find((c) => c.id === row.msg.authorId);
   const alias = contact?.alias ?? "unknown";
+  const animate = newIds.has(row.msg.id);
 
   return (
-    <MessageBubble message={row.msg} variant={row.variant} authorAlias={alias} />
+    <MessageBubble
+      message={row.msg}
+      variant={row.variant}
+      authorAlias={alias}
+      animate={animate}
+    />
   );
 }
 

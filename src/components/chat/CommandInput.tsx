@@ -7,8 +7,9 @@ import {
 } from "react-native";
 import { AntDesign } from "@expo/vector-icons";
 import { Colors } from "@/components/colors";
-import { COMMAND_REGEX_FOR_HIGHLIGHT, parseCommand } from "@/lib/chat/commands";
+import { getCommandQuery, parseCommand } from "@/lib/chat/commands";
 import { cn } from "@/lib/cn";
+import { CommandPalette } from "./CommandPalette";
 
 type Props = {
   value: string;
@@ -31,13 +32,13 @@ export function CommandInput({
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const focusStartRef = useRef<number | null>(null);
 
-  const match = value.match(COMMAND_REGEX_FOR_HIGHLIGHT);
-  const isCommand = !!match;
+  const isCommand = value.startsWith("/");
   const parsed = isCommand ? parseCommand(value) : null;
   const isValid = !!parsed && parsed.kind !== "panic";
-  const isUnknown = isCommand && parsed === null;
+  const isUnknown = isCommand && value.length > 1 && parsed === null;
 
   const showError = isUnknown && (inputBlurred || submitAttempted);
+  const showPalette = isCommand;
 
   const handleFocus = useCallback(() => {
     focusStartRef.current = Date.now();
@@ -69,6 +70,15 @@ export function CommandInput({
     [onChange],
   );
 
+  const handlePaletteSelect = useCallback(
+    (cmd: string) => {
+      onChange(cmd);
+      setInputBlurred(false);
+      setSubmitAttempted(false);
+    },
+    [onChange],
+  );
+
   const borderClass = showError
     ? "border-ruby"
     : isCommand && isValid
@@ -77,8 +87,14 @@ export function CommandInput({
 
   return (
     <View className="-mx-8 border-t border-primary-400 py-2">
+      {showPalette && (
+        <CommandPalette
+          query={getCommandQuery(value)}
+          onSelect={handlePaletteSelect}
+        />
+      )}
       <View className="flex-row items-center gap-1 mx-2">
-        <Text className="text-secondary-600 text-xl font-fira-code">
+        <Text className="text-secondary-600 text-base font-fira-code">
           <Text className="text-primary-100">{">"}</Text> {"<"}
           <Text className="text-secondary">@</Text>
           {myAlias}
@@ -92,7 +108,7 @@ export function CommandInput({
           onBlur={handleBlur}
           editable={!isSending}
           className={cn(
-            "flex-1 text-lg font-fira-code-light px-4 py-2 rounded-xl border",
+            "flex-1 text-base font-fira-code-light px-4 py-2 rounded-xl border",
             borderClass,
           )}
           placeholder={
@@ -108,16 +124,15 @@ export function CommandInput({
           returnKeyType="send"
           style={{ color: Colors.secondary[200] }}
         />
-        <Text className="text-secondary-600 text-xl font-fira-code">|</Text>
         <TouchableOpacity
           onPress={handleSubmit}
           disabled={!value.trim() || isSending || isUnknown}
-          className="border border-primary-400 h-12 w-12 rounded-2xl items-center justify-center"
+          className="border border-primary-400 h-10 w-10 rounded-xl items-center justify-center"
           style={{
             opacity: !value.trim() || isSending || isUnknown ? 0.4 : 1,
           }}
         >
-          <AntDesign name="enter" size={18} color="white" />
+          <AntDesign name="enter" size={16} color="white" />
         </TouchableOpacity>
       </View>
       {isCommand && isValid && (

@@ -62,7 +62,7 @@ export default function ChatTab() {
             <Text className="text-secondary-600 text-xl font-fira-code">
               {"<"}
               <Text className="text-secondary-200">@</Text>
-              <Text className="text-secondary-600">mavri</Text>
+              <Text className="text-secondary-600">uriel</Text>
               {">"}
             </Text>
             <Text className="text-primary-100 text-lg font-fira-code">

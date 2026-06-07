@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,75 +13,40 @@ import * as Icon from "phosphor-react-native";
 import { CommandInput } from "@/components/chat/CommandInput";
 import { MessageList } from "@/components/chat/MessageList";
 import { parseCommand } from "@/lib/chat/commands";
-import type { Contact, Message } from "@/lib/chat/types";
+import {
+  MOCK_MY_ID,
+  MOCK_THREAD_ID,
+  startMavriMockIfEmpty,
+  startMavriMockReplay,
+} from "@/lib/chat/mock";
+import { useChatStore } from "@/store/chat.store";
+import { randomUUID } from "react-native-quick-crypto";
+import type { Message } from "@/lib/chat/types";
 
-const MY_ID = "self_pm";
+const MY_ID = MOCK_MY_ID;
+const THREAD_ID = MOCK_THREAD_ID;
 const MY_ALIAS = "pm";
-const THREAD_ID = "mavri";
-
-const CONTACTS: Contact[] = [
-  {
-    id: MY_ID,
-    alias: MY_ALIAS,
-    fingerprint: "self_a1b2c3d4e5f60718",
-    status: "p2p",
-    lastSeen: Date.now(),
-  },
-  {
-    id: "mavri",
-    alias: "mavri",
-    fingerprint: "9c4f7e2a8b1d3f5c",
-    status: "p2p",
-    lastSeen: Date.now(),
-  },
-];
-
-const SEED_MESSAGES: Message[] = [
-  {
-    id: "m1",
-    threadId: THREAD_ID,
-    authorId: "mavri",
-    text: "yo",
-    createdAt: new Date(2025, 11, 1, 10, 45, 13).getTime(),
-    status: "read",
-  },
-  {
-    id: "m2",
-    threadId: THREAD_ID,
-    authorId: "mavri",
-    text: "bro",
-    createdAt: new Date(2025, 11, 1, 10, 45, 13).getTime(),
-    status: "read",
-  },
-  {
-    id: "m3",
-    threadId: THREAD_ID,
-    authorId: MY_ID,
-    text: "???",
-    createdAt: new Date(2025, 11, 1, 10, 45, 14).getTime(),
-    status: "read",
-  },
-  {
-    id: "m4",
-    threadId: THREAD_ID,
-    authorId: MY_ID,
-    text: "bro",
-    createdAt: new Date(2025, 11, 2, 10, 45, 13).getTime(),
-    status: "read",
-  },
-  {
-    id: "m5",
-    threadId: THREAD_ID,
-    authorId: "mavri",
-    text: "???",
-    createdAt: new Date(2025, 11, 2, 10, 45, 14).getTime(),
-    status: "read",
-  },
-];
+const PARTNER_ALIAS = "mavri";
 
 export default function DMTab() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
+
+  const messages = useChatStore((s) => s.messages[THREAD_ID] ?? []);
+  const contacts = useChatStore((s) => s.contacts);
+  const addMessage = useChatStore((s) => s.addMessage);
+  const updateMessage = useChatStore((s) => s.updateMessage);
+  const markThreadRead = useChatStore((s) => s.markThreadRead);
+  const clearThread = useChatStore((s) => s.clearThread);
+
+  useEffect(() => {
+    startMavriMockIfEmpty();
+  }, []);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    markThreadRead(THREAD_ID, MY_ID);
+  }, [messages.length, markThreadRead]);
 
   const handleSend = useCallback(() => {
     const text = draft.trim();
@@ -89,16 +54,48 @@ export default function DMTab() {
 
     const parsed = parseCommand(text);
     if (parsed?.kind === "clear") {
+      clearThread(THREAD_ID);
       setDraft("");
       return;
     }
 
     setIsSending(true);
+
+    const id = randomUUID();
+    const newMessage: Message = {
+      id,
+      threadId: THREAD_ID,
+      authorId: MY_ID,
+      text,
+      createdAt: Date.now(),
+      status: "sending",
+    };
+
+    if (parsed) {
+      newMessage.command = parsed.kind;
+      if (parsed.kind === "canary") {
+        newMessage.isCanary = true;
+      } else if (parsed.kind === "burn") {
+        newMessage.burnOnRead = true;
+        newMessage.burnDurationSec = parsed.durationSec ?? 5;
+      } else if (parsed.kind === "ttl") {
+        newMessage.expiresAt =
+          Date.now() + (parsed.durationSec ?? 300) * 1000;
+      }
+    }
+
+    addMessage(newMessage);
+    setDraft("");
+
     setTimeout(() => {
+      updateMessage(THREAD_ID, id, { status: "delivered" });
       setIsSending(false);
-      setDraft("");
-    }, 250);
-  }, [draft]);
+    }, 500);
+  }, [draft, addMessage, updateMessage, clearThread]);
+
+  const handleReplay = useCallback(() => {
+    startMavriMockReplay();
+  }, []);
 
   return (
     <KeyboardAvoidingView
@@ -118,15 +115,20 @@ export default function DMTab() {
           <View className="flex-col items-center">
             <Text className="text-secondary-600 text-xl font-fira-code-light">
               {"<"}
-              <Text className="text-secondary">@</Text>mavri{">"}
+              <Text className="text-secondary">@</Text>
+              {PARTNER_ALIAS}
+              {">"}
             </Text>
             <Text className="text-primary-100 text-base font-fira-code-light">
               using e2e-encryption
             </Text>
           </View>
-          <TouchableOpacity className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center">
-            <Icon.DotsThreeVerticalIcon
-              size={24}
+          <TouchableOpacity
+            onPress={handleReplay}
+            className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center"
+          >
+            <Icon.ArrowClockwiseIcon
+              size={20}
               color={Colors.secondary[400]}
             />
           </TouchableOpacity>
@@ -134,9 +136,9 @@ export default function DMTab() {
         <View className="h-px bg-primary-400 mt-4" />
         <View className="flex-1 -mx-3 mt-6">
           <MessageList
-            messages={SEED_MESSAGES}
+            messages={messages}
             myId={MY_ID}
-            contacts={CONTACTS}
+            contacts={contacts}
           />
         </View>
         <CommandInput

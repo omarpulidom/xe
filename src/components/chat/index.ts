@@ -6,3 +6,7 @@ export * from "./TypewriterText";
 export * from "./Caret";
 export * from "./BurnRing";
 export * from "./GlitchText";
+export * from "./BootSequence";
+export * from "./TypingIndicator";
+export * from "./StatusDot";
+export * from "./DebugBar";

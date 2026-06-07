@@ -4,6 +4,7 @@ import { formatDate, isSameDay } from "@/lib/chat/format";
 import { useChatStore } from "@/store/chat.store";
 import type { Contact, Message, MessageVariant } from "@/lib/chat/types";
 import { Message as MessageBubble } from "./Message";
+import { TypingIndicator } from "./TypingIndicator";
 
 type DateRow = {
   type: "date";
@@ -24,6 +25,8 @@ type Props = {
   messages: Message[];
   myId: string;
   contacts: Contact[];
+  typing?: boolean;
+  typingAlias?: string;
   systemAuthorId?: string;
   emptyText?: string;
 };
@@ -32,6 +35,8 @@ export function MessageList({
   messages,
   myId,
   contacts,
+  typing = false,
+  typingAlias = "...",
   systemAuthorId = "system",
   emptyText = "// no messages yet",
 }: Props) {
@@ -117,6 +122,9 @@ export function MessageList({
       renderItem={({ item }) => renderRow(item, contacts, newIds)}
       contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 16 }}
       showsVerticalScrollIndicator={false}
+      ListFooterComponent={
+        typing ? <TypingIndicator authorAlias={typingAlias} /> : null
+      }
     />
   );
 }

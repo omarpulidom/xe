@@ -8,7 +8,6 @@ const CHAT_STORE_NAME = "umbra-chat-v1";
 type ChatState = {
   messages: Record<string, Message[]>;
   contacts: Contact[];
-  hasBooted: Record<string, boolean>;
   typing: Record<string, boolean>;
 };
 
@@ -24,7 +23,6 @@ type ChatActions = {
   setContactStatus: (contactId: string, status: Contact["status"]) => void;
   upsertContact: (contact: Contact) => void;
   clearThread: (threadId: string) => void;
-  markBooted: (threadId: string) => void;
   setTyping: (threadId: string, isTyping: boolean) => void;
   resetChat: () => void;
 };
@@ -51,7 +49,6 @@ const initialContacts: Contact[] = [
 const initialState: ChatState = {
   messages: {},
   contacts: initialContacts,
-  hasBooted: {},
   typing: {},
 };
 
@@ -132,10 +129,6 @@ export const useChatStore = create<ChatStore>()(
             [threadId]: [],
           },
         })),
-      markBooted: (threadId) =>
-        set((state) => ({
-          hasBooted: { ...state.hasBooted, [threadId]: true },
-        })),
       setTyping: (threadId, isTyping) =>
         set((state) => {
           if (!isTyping) {
@@ -152,13 +145,11 @@ export const useChatStore = create<ChatStore>()(
       storage: createJSONStorage(() => zustandMMKVStorage),
       partialize: (state) => ({
         messages: state.messages,
-        hasBooted: state.hasBooted,
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as
           | {
               messages?: Record<string, Message[]>;
-              hasBooted?: Record<string, boolean>;
             }
           | undefined;
         const rawMessages = persisted?.messages ?? {};
@@ -171,7 +162,6 @@ export const useChatStore = create<ChatStore>()(
         return {
           ...currentState,
           messages: migrated,
-          hasBooted: persisted?.hasBooted ?? {},
         };
       },
     },

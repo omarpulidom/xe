@@ -11,9 +11,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Colors } from "@/components/colors";
 import * as Icon from "phosphor-react-native";
-import { BootSequence } from "@/components/chat/BootSequence";
 import { CommandInput } from "@/components/chat/CommandInput";
+import { ConnectionBanner } from "@/components/chat/ConnectionBanner";
 import { DebugBar } from "@/components/chat/DebugBar";
+import {
+  MessageActionSheet,
+  type MessageAction,
+} from "@/components/chat/MessageActionSheet";
 import { MessageList } from "@/components/chat/MessageList";
 import { StatusDot } from "@/components/chat/StatusDot";
 import { parseCommand } from "@/lib/chat/commands";
@@ -36,37 +40,27 @@ const SHOW_DEBUG_BAR = true;
 export default function DMTab() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [showBoot, setShowBoot] = useState(false);
+  const [actionMessage, setActionMessage] = useState<Message | null>(null);
 
   const messages = useChatStore((s) => s.messages[THREAD_ID] ?? []);
   const contacts = useChatStore((s) => s.contacts);
   const typing = useChatStore((s) => s.typing[THREAD_ID] ?? false);
-  const hasBooted = useChatStore((s) => s.hasBooted[THREAD_ID] ?? false);
   const addMessage = useChatStore((s) => s.addMessage);
   const updateMessage = useChatStore((s) => s.updateMessage);
   const markThreadRead = useChatStore((s) => s.markThreadRead);
   const clearThread = useChatStore((s) => s.clearThread);
-  const markBooted = useChatStore((s) => s.markBooted);
+  const removeMessage = useChatStore((s) => s.removeMessage);
+  const setContactStatus = useChatStore((s) => s.setContactStatus);
   const setTyping = useChatStore((s) => s.setTyping);
 
   useEffect(() => {
-    if (!hasBooted) {
-      setShowBoot(true);
-    } else {
-      startUrielMockIfEmpty();
-    }
-  }, [hasBooted]);
+    startUrielMockIfEmpty();
+  }, []);
 
   useEffect(() => {
     if (messages.length === 0) return;
     markThreadRead(THREAD_ID, MY_ID);
   }, [messages.length, markThreadRead]);
-
-  const handleBootComplete = useCallback(() => {
-    markBooted(THREAD_ID);
-    setShowBoot(false);
-    startUrielMockIfEmpty();
-  }, [markBooted]);
 
   const sendMessage = useCallback(
     (text: string) => {
@@ -148,14 +142,58 @@ export default function DMTab() {
     [setTyping],
   );
 
-  if (showBoot) {
-    return <BootSequence onComplete={handleBootComplete} />;
-  }
+  const handleDebugStatus = useCallback(
+    (status: "p2p" | "relay" | "offline") => {
+      setContactStatus("uriel", status);
+    },
+    [setContactStatus],
+  );
+
+  const handleMessageLongPress = useCallback((m: Message) => {
+    setActionMessage(m);
+  }, []);
+
+  const handleActionSheetAction = useCallback(
+    (action: MessageAction, m: Message) => {
+      if (action === "delete") {
+        Vibration.vibrate(20);
+        removeMessage(THREAD_ID, m.id);
+        return;
+      }
+      if (action === "copy") {
+        // TODO: replace with `Clipboard.setString` from `expo-clipboard`
+        // (requires `npx expo install expo-clipboard` and a rebuild).
+        Vibration.vibrate(10);
+        return;
+      }
+      if (action === "reply" || action === "quote") {
+        const alias =
+          m.authorId === MY_ID
+            ? MY_ALIAS
+            : (contacts.find((c) => c.id === m.authorId)?.alias ??
+              "unknown");
+        const body = (m.text ?? "").split("\n")[0];
+        if (action === "quote") {
+          const block = `> <@${alias}>: ${body}\n`;
+          setDraft((prev) => `${prev}${prev ? "\n" : ""}${block}`);
+        } else {
+          setDraft((prev) => `${prev}${prev ? " " : ""}↳ @${alias}: `);
+        }
+        Vibration.vibrate(10);
+      }
+    },
+    [contacts, removeMessage],
+  );
 
   const partner = contacts.find((c) => c.id === "uriel");
   const partnerStatus = partner?.status ?? "p2p";
   const fp = partner?.fingerprint ?? "";
   const fpShort = fp.length >= 8 ? `${fp.slice(0, 4)}…${fp.slice(-3)}` : fp;
+  const actionAuthorAlias =
+    actionMessage?.authorId === MY_ID
+      ? MY_ALIAS
+      : (contacts.find((c) => c.id === actionMessage?.authorId)?.alias ??
+        "unknown");
 
   return (
     <View className="flex-1 bg-primary">
@@ -198,19 +236,23 @@ export default function DMTab() {
             </TouchableOpacity>
           </View>
           <View className="h-px bg-primary-400 mt-4" />
-          <View className="flex-1 -mx-3 mt-6">
+          <ConnectionBanner status={partnerStatus} />
+          <View className="flex-1 -mx-3 mt-2">
             <MessageList
               messages={messages}
               myId={MY_ID}
               contacts={contacts}
               typing={typing}
               typingAlias={PARTNER_ALIAS}
+              onMessageLongPress={handleMessageLongPress}
             />
           </View>
           {SHOW_DEBUG_BAR && (
             <DebugBar
               onAddMessage={handleDebugAddMessage}
               onTriggerTyping={handleDebugTyping}
+              onSetStatus={handleDebugStatus}
+              currentStatus={partnerStatus}
             />
           )}
           <CommandInput
@@ -222,6 +264,13 @@ export default function DMTab() {
           />
         </SafeAreaView>
       </KeyboardAvoidingView>
+      <MessageActionSheet
+        visible={!!actionMessage}
+        message={actionMessage}
+        authorAlias={actionAuthorAlias}
+        onClose={() => setActionMessage(null)}
+        onAction={handleActionSheetAction}
+      />
     </View>
   );
 }

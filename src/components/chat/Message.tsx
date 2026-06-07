@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Animated, { SlideInLeft, SlideInRight } from "react-native-reanimated";
-import { Text, View } from "react-native";
+import { Pressable, Text, Vibration, View } from "react-native";
 import { formatTime } from "@/lib/chat/format";
 import { parseCommand } from "@/lib/chat/commands";
 import { useChatStore } from "@/store/chat.store";
@@ -14,11 +14,18 @@ type Props = {
   variant: MessageVariant;
   authorAlias: string;
   animate: boolean;
+  onLongPress?: (message: Message) => void;
 };
 
 const GLITCH_DURATION_MS = 420;
 
-export function Message({ message, variant, authorAlias, animate }: Props) {
+export function Message({
+  message,
+  variant,
+  authorAlias,
+  animate,
+  onLongPress,
+}: Props) {
   const [isGlitching, setIsGlitching] = useState(false);
   const prevStatus = useRef(message.status);
   const processedRef = useRef(false);
@@ -99,10 +106,21 @@ export function Message({ message, variant, authorAlias, animate }: Props) {
       message.status === "expired");
   const canaryDotColor = isCanaryOpened ? "#3bff7d" : "#f5ac58";
 
+  const handleLongPress = () => {
+    if (!onLongPress) return;
+    Vibration.vibrate([0, 15, 30, 15]);
+    onLongPress(message);
+  };
+
   return (
+    <Pressable
+      onLongPress={handleLongPress}
+      delayLongPress={350}
+      disabled={!onLongPress}
+      className="mb-1.5"
+    >
     <Animated.View
       entering={entering}
-      className="mb-1.5"
     >
       {showBurnRing && (
         <View className="mb-0.5">
@@ -158,5 +176,6 @@ export function Message({ message, variant, authorAlias, animate }: Props) {
         </Text>
       )}
     </Animated.View>
+    </Pressable>
   );
 }

@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Text,
+  View,
+} from "react-native";
 import { formatDate, isSameDay } from "@/lib/chat/format";
 import { useChatStore } from "@/store/chat.store";
 import type { Contact, Message, MessageVariant } from "@/lib/chat/types";
 import { Message as MessageBubble } from "./Message";
 import { TypingIndicator } from "./TypingIndicator";
+import { ScrollToBottomBadge } from "./ScrollToBottomBadge";
 
 type DateRow = {
   type: "date";
@@ -29,7 +36,10 @@ type Props = {
   typingAlias?: string;
   systemAuthorId?: string;
   emptyText?: string;
+  onMessageLongPress?: (message: Message) => void;
 };
+
+const AT_BOTTOM_THRESHOLD_PX = 80;
 
 export function MessageList({
   messages,
@@ -39,6 +49,7 @@ export function MessageList({
   typingAlias = "...",
   systemAuthorId = "system",
   emptyText = "// no messages yet",
+  onMessageLongPress,
 }: Props) {
   const allRows = useMemo(
     () => buildRows(messages, myId, systemAuthorId),
@@ -48,6 +59,11 @@ export function MessageList({
   const seenIdsRef = useRef<Set<string>>(new Set());
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [isReady, setIsReady] = useState(false);
+
+  const flatListRef = useRef<FlatList<Row>>(null);
+  const isAtBottomRef = useRef(true);
+  const prevCountRef = useRef(0);
+  const [newCount, setNewCount] = useState(0);
 
   useEffect(() => {
     for (const m of messages) {
@@ -73,6 +89,27 @@ export function MessageList({
       });
     }
   }, [messages, isReady]);
+
+  useEffect(() => {
+    const count = messages.length;
+    if (!isReady) {
+      prevCountRef.current = count;
+      return;
+    }
+    const prev = prevCountRef.current;
+    if (count > prev) {
+      const diff = count - prev;
+      if (isAtBottomRef.current) {
+        requestAnimationFrame(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        });
+        setNewCount(0);
+      } else {
+        setNewCount((c) => c + diff);
+      }
+    }
+    prevCountRef.current = count;
+  }, [messages.length, isReady]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -102,6 +139,31 @@ export function MessageList({
     });
   }, [allRows, isReady, newIds]);
 
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distance =
+      contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    const atBottom = distance < AT_BOTTOM_THRESHOLD_PX;
+    isAtBottomRef.current = atBottom;
+    if (atBottom) {
+      setNewCount(0);
+    }
+  }, []);
+
+  const onContentSizeChange = useCallback(() => {
+    if (isAtBottomRef.current) {
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      });
+    }
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setNewCount(0);
+    isAtBottomRef.current = true;
+  }, []);
+
   if (visibleRows.length === 0) {
     return (
       <View className="flex-1 items-center justify-center">
@@ -113,19 +175,32 @@ export function MessageList({
   }
 
   return (
-    <FlatList
-      data={visibleRows}
-      keyExtractor={(r) => {
-        if (r.type === "date") return r.key;
-        return newIds.has(r.msg.id) ? `${r.msg.id}-anim` : r.msg.id;
-      }}
-      renderItem={({ item }) => renderRow(item, contacts, newIds)}
-      contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 16 }}
-      showsVerticalScrollIndicator={false}
-      ListFooterComponent={
-        typing ? <TypingIndicator authorAlias={typingAlias} /> : null
-      }
-    />
+    <View className="flex-1">
+      <FlatList
+        ref={flatListRef}
+        data={visibleRows}
+        keyExtractor={(r) => {
+          if (r.type === "date") return r.key;
+          return newIds.has(r.msg.id) ? `${r.msg.id}-anim` : r.msg.id;
+        }}
+        renderItem={({ item }) =>
+          renderRow(item, contacts, newIds, onMessageLongPress)
+        }
+        contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 16 }}
+        showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
+        onContentSizeChange={onContentSizeChange}
+        ListFooterComponent={
+          typing ? <TypingIndicator authorAlias={typingAlias} /> : null
+        }
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+          autoscrollToTopThreshold: 0,
+        }}
+      />
+      <ScrollToBottomBadge count={newCount} onPress={scrollToBottom} />
+    </View>
   );
 }
 
@@ -133,12 +208,17 @@ function renderRow(
   row: Row,
   contacts: Contact[],
   newIds: Set<string>,
+  onMessageLongPress?: (message: Message) => void,
 ) {
   if (row.type === "date") {
     return (
-      <Text className="text-center text-primary-100 text-sm font-fira-code my-3">
-        {formatDate(row.date)}
-      </Text>
+      <View className="flex-row items-center gap-2 my-3">
+        <View className="flex-1 h-px bg-primary-400" />
+        <Text className="text-xs text-primary-100 font-fira-code">
+          {formatDate(row.date)}
+        </Text>
+        <View className="flex-1 h-px bg-primary-400" />
+      </View>
     );
   }
 
@@ -163,6 +243,7 @@ function renderRow(
       variant={row.variant}
       authorAlias={alias}
       animate={animate}
+      onLongPress={onMessageLongPress}
     />
   );
 }

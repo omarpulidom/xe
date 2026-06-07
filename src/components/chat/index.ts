@@ -13,3 +13,4 @@ export * from "./ConnectionBanner";
 export * from "./MessageActionSheet";
 export * from "./ScrollToBottomBadge";
 export * from "./ReplyBar";
+export * from "./PanicOverlay";

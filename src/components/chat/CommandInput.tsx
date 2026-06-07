@@ -34,7 +34,7 @@ export function CommandInput({
 
   const isCommand = value.startsWith("/");
   const parsed = isCommand ? parseCommand(value) : null;
-  const isValid = !!parsed && parsed.kind !== "panic";
+  const isValid = !!parsed;
   const isUnknown = isCommand && value.length > 1 && parsed === null;
 
   const showError = isUnknown && (inputBlurred || submitAttempted);
@@ -81,9 +81,11 @@ export function CommandInput({
 
   const borderClass = showError
     ? "border-ruby"
-    : isCommand && isValid
-      ? "border-greeny-300"
-      : "border-primary-400";
+    : isCommand && parsed?.kind === "panic"
+      ? "border-ruby"
+      : isCommand && isValid
+        ? "border-greeny-300"
+        : "border-primary-400";
 
   return (
     <View className="py-2">
@@ -137,9 +139,21 @@ export function CommandInput({
       </View>
       {isCommand && isValid && (
         <View className="mx-2 mt-2 flex-row items-center gap-2">
-          <Text className="text-sm font-fira-code text-greeny-300">{"//"}</Text>
-          <Text className="text-sm font-fira-code text-secondary-200">
-            {formatParsed(parsed)}
+          <Text
+            className={`text-sm font-fira-code ${
+              parsed?.kind === "panic" ? "text-ruby" : "text-greeny-300"
+            }`}
+          >
+            {"//"}
+          </Text>
+          <Text
+            className={`text-sm font-fira-code ${
+              parsed?.kind === "panic" ? "text-ruby" : "text-secondary-200"
+            }`}
+          >
+            {parsed?.kind === "panic"
+              ? "lock the app — requires PIN to unlock"
+              : formatParsed(parsed)}
           </Text>
         </View>
       )}

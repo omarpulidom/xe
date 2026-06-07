@@ -23,6 +23,7 @@ type ActionConfig = {
   kind: MessageAction;
   label: string;
   hint: string;
+  disabledHint?: string;
   color: string;
 };
 
@@ -31,6 +32,7 @@ const ACTIONS: ActionConfig[] = [
     kind: "reply",
     label: "↳ reply",
     hint: "attach as quoted reply",
+    disabledHint: "can't quote self-destructing msg",
     color: "#f0f0f0",
   },
   {
@@ -103,8 +105,12 @@ export function MessageActionSheet({
               <Text className="text-xs text-primary-100 font-fira-code mb-1">
                 {"// "}
                 <Text className="text-secondary-200">@{authorAlias}</Text>
-                {"  ·  "}
-                {message.text ? "" : "image"}
+                {message.burnOnRead && (
+                  <Text style={{ color: "#f5ac58" }}>  ·  burn</Text>
+                )}
+                {!message.burnOnRead && message.expiresAt && (
+                  <Text style={{ color: "#f5ac58" }}>  ·  ttl</Text>
+                )}
               </Text>
               <Text
                 className="text-sm text-secondary-200 font-fira-code-light"
@@ -115,27 +121,41 @@ export function MessageActionSheet({
             </View>
           )}
           <View className="py-1">
-            {ACTIONS.map((a) => (
-              <Pressable
-                key={a.kind}
-                onPress={() => {
-                  Vibration.vibrate(10);
-                  onAction(a.kind, message!);
-                  onClose();
-                }}
-                className="px-4 py-3 flex-row items-center justify-between active:bg-primary-400"
-              >
-                <Text
-                  className="text-base font-fira-code"
-                  style={{ color: a.color }}
+            {ACTIONS.map((a) => {
+              const locked =
+                !!message &&
+                a.kind === "reply" &&
+                (message.burnOnRead || !!message.expiresAt);
+              const hint = locked ? a.disabledHint ?? a.hint : a.hint;
+              return (
+                <Pressable
+                  key={a.kind}
+                  onPress={
+                    locked
+                      ? undefined
+                      : () => {
+                          Vibration.vibrate(10);
+                          onAction(a.kind, message!);
+                          onClose();
+                        }
+                  }
+                  disabled={locked}
+                  className={`px-4 py-3 flex-row items-center justify-between ${
+                    locked ? "opacity-40" : "active:bg-primary-400"
+                  }`}
                 >
-                  {a.label}
-                </Text>
-                <Text className="text-xs text-primary-100 font-fira-code">
-                  {a.hint}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text
+                    className="text-base font-fira-code"
+                    style={{ color: locked ? "#80837e" : a.color }}
+                  >
+                    {a.label}
+                  </Text>
+                  <Text className="text-xs text-primary-100 font-fira-code">
+                    {hint}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
           <Pressable
             onPress={onClose}

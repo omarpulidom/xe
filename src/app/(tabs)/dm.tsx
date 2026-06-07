@@ -19,6 +19,7 @@ import {
   type MessageAction,
 } from "@/components/chat/MessageActionSheet";
 import { MessageList } from "@/components/chat/MessageList";
+import { PanicOverlay } from "@/components/chat/PanicOverlay";
 import { ReplyBar } from "@/components/chat/ReplyBar";
 import { StatusDot } from "@/components/chat/StatusDot";
 import { parseCommand } from "@/lib/chat/commands";
@@ -43,6 +44,7 @@ export default function DMTab() {
   const [isSending, setIsSending] = useState(false);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
+  const [panicActive, setPanicActive] = useState(false);
 
   const messages = useChatStore((s) => s.messages[THREAD_ID] ?? []);
   const contacts = useChatStore((s) => s.contacts);
@@ -118,6 +120,12 @@ export default function DMTab() {
     if (parsed?.kind === "clear") {
       Vibration.vibrate([0, 30, 50, 30]);
       clearThread(THREAD_ID);
+      setDraft("");
+      return;
+    }
+    if (parsed?.kind === "panic") {
+      Vibration.vibrate([0, 100, 50, 100, 50, 300]);
+      setPanicActive(true);
       setDraft("");
       return;
     }
@@ -282,6 +290,10 @@ export default function DMTab() {
         authorAlias={actionAuthorAlias}
         onClose={() => setActionMessage(null)}
         onAction={handleActionSheetAction}
+      />
+      <PanicOverlay
+        visible={panicActive}
+        onUnlock={() => setPanicActive(false)}
       />
     </View>
   );

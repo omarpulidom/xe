@@ -4,6 +4,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Text,
+  Vibration,
   View,
 } from "react-native";
 import { formatDate, isSameDay } from "@/lib/chat/format";
@@ -40,6 +41,7 @@ type Props = {
 };
 
 const AT_BOTTOM_THRESHOLD_PX = 80;
+const HIGHLIGHT_DURATION_MS = 1200;
 
 export function MessageList({
   messages,
@@ -64,6 +66,8 @@ export function MessageList({
   const isAtBottomRef = useRef(true);
   const prevCountRef = useRef(0);
   const [newCount, setNewCount] = useState(0);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     for (const m of messages) {
@@ -164,6 +168,36 @@ export function MessageList({
     isAtBottomRef.current = true;
   }, []);
 
+  const handleReplyQuotePress = useCallback(
+    (id: string) => {
+      const idx = visibleRows.findIndex(
+        (r) => r.type === "msg" && r.msg.id === id,
+      );
+      if (idx === -1) return;
+      Vibration.vibrate([0, 20, 30, 20]);
+      flatListRef.current?.scrollToIndex({
+        index: idx,
+        animated: true,
+        viewPosition: 0.3,
+      });
+      setHighlightedId(id);
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedId(null);
+        highlightTimerRef.current = null;
+      }, HIGHLIGHT_DURATION_MS);
+    },
+    [visibleRows],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
+
   if (visibleRows.length === 0) {
     return (
       <View className="flex-1 items-center justify-center">
@@ -184,13 +218,29 @@ export function MessageList({
           return newIds.has(r.msg.id) ? `${r.msg.id}-anim` : r.msg.id;
         }}
         renderItem={({ item }) =>
-          renderRow(item, contacts, newIds, onMessageLongPress)
+          renderRow(
+            item,
+            contacts,
+            newIds,
+            onMessageLongPress,
+            handleReplyQuotePress,
+            highlightedId,
+          )
         }
         contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 16 }}
         showsVerticalScrollIndicator={false}
         onScroll={onScroll}
         scrollEventThrottle={32}
         onContentSizeChange={onContentSizeChange}
+        onScrollToIndexFailed={(info) => {
+          setTimeout(() => {
+            flatListRef.current?.scrollToIndex({
+              index: info.index,
+              animated: true,
+              viewPosition: 0.3,
+            });
+          }, 100);
+        }}
         ListFooterComponent={
           typing ? <TypingIndicator authorAlias={typingAlias} /> : null
         }
@@ -209,6 +259,8 @@ function renderRow(
   contacts: Contact[],
   newIds: Set<string>,
   onMessageLongPress?: (message: Message) => void,
+  onReplyQuotePress?: (messageId: string) => void,
+  highlightedId: string | null = null,
 ) {
   if (row.type === "date") {
     return (
@@ -242,6 +294,8 @@ function renderRow(
       authorAlias={alias}
       animate={animate}
       onLongPress={onMessageLongPress}
+      onReplyQuotePress={onReplyQuotePress}
+      isHighlighted={highlightedId === row.msg.id}
     />
   );
 }

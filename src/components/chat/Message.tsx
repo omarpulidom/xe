@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import Animated, { SlideInLeft, SlideInRight } from "react-native-reanimated";
+import Animated, {
+  Easing,
+  SlideInLeft,
+  SlideInRight,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import { Pressable, Text, Vibration, View } from "react-native";
 import { formatTime } from "@/lib/chat/format";
 import { parseCommand } from "@/lib/chat/commands";
@@ -15,6 +23,8 @@ type Props = {
   authorAlias: string;
   animate: boolean;
   onLongPress?: (message: Message) => void;
+  onReplyQuotePress?: (messageId: string) => void;
+  isHighlighted?: boolean;
 };
 
 const GLITCH_DURATION_MS = 420;
@@ -25,6 +35,8 @@ export function Message({
   authorAlias,
   animate,
   onLongPress,
+  onReplyQuotePress,
+  isHighlighted = false,
 }: Props) {
   const [isGlitching, setIsGlitching] = useState(false);
   const prevStatus = useRef(message.status);
@@ -60,6 +72,23 @@ export function Message({
     }, GLITCH_DURATION_MS);
     return () => clearTimeout(timer);
   }, [isGlitching, removeMessage, message.threadId, message.id]);
+
+  const highlight = useSharedValue(0);
+  useEffect(() => {
+    if (isHighlighted) {
+      highlight.value = withSequence(
+        withTiming(1, { duration: 150, easing: Easing.out(Easing.ease) }),
+        withTiming(0, {
+          duration: 1000,
+          easing: Easing.out(Easing.ease),
+        }),
+      );
+    }
+  }, [isHighlighted, highlight]);
+
+  const highlightStyle = useAnimatedStyle(() => ({
+    opacity: highlight.value,
+  }));
 
   const isDestroyed =
     message.status === "burned" || message.status === "expired";
@@ -112,6 +141,11 @@ export function Message({
     onLongPress(message);
   };
 
+  const handleQuotePress = () => {
+    if (!onReplyQuotePress || !message.replyTo) return;
+    onReplyQuotePress(message.replyTo.id);
+  };
+
   return (
     <Pressable
       onLongPress={handleLongPress}
@@ -122,6 +156,14 @@ export function Message({
     <Animated.View
       entering={entering}
     >
+      <Animated.View
+        pointerEvents="none"
+        className="absolute inset-0 rounded"
+        style={[
+          { backgroundColor: "rgba(240, 240, 240, 0.18)" },
+          highlightStyle,
+        ]}
+      />
       {showBurnRing && (
         <View className="mb-0.5">
           <BurnRing
@@ -132,7 +174,12 @@ export function Message({
         </View>
       )}
       {message.replyTo && !isGlitching && (
-        <View className="flex-row items-stretch mb-1 ml-1">
+        <Pressable
+          onPress={handleQuotePress}
+          hitSlop={6}
+          disabled={!onReplyQuotePress || isGlitching}
+          className="flex-row items-stretch mb-1 ml-1 active:opacity-60"
+        >
           <View
             className="w-[2px] mr-2 rounded-sm"
             style={{ backgroundColor: "#f0f0f0" }}
@@ -151,7 +198,7 @@ export function Message({
               {message.replyTo.text || "(empty)"}
             </Text>
           </View>
-        </View>
+        </Pressable>
       )}
       {isGlitching ? (
         <View className="flex-row items-start gap-1">

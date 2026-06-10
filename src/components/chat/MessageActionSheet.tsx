@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import type { Message } from "@/lib/chat/types";
 
-export type MessageAction = "reply" | "copy" | "delete";
+export type MessageAction = "reply" | "delete";
 
 type Props = {
   visible: boolean;
@@ -33,12 +33,6 @@ const ACTIONS: ActionConfig[] = [
     label: "↳ reply",
     hint: "attach as quoted reply",
     disabledHint: "can't quote self-destructing msg",
-    color: "#f0f0f0",
-  },
-  {
-    kind: "copy",
-    label: "⎘ copy",
-    hint: "copy to clipboard",
     color: "#f0f0f0",
   },
   {

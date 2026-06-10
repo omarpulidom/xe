@@ -215,7 +215,7 @@ export function MessageList({
         data={visibleRows}
         keyExtractor={(r) => {
           if (r.type === "date") return r.key;
-          return newIds.has(r.msg.id) ? `${r.msg.id}-anim` : r.msg.id;
+          return r.msg.id;
         }}
         renderItem={({ item }) =>
           renderRow(

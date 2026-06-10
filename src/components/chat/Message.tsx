@@ -41,6 +41,7 @@ export function Message({
   const [isGlitching, setIsGlitching] = useState(false);
   const prevStatus = useRef(message.status);
   const processedRef = useRef(false);
+  const hasEnteredRef = useRef(false);
   const removeMessage = useChatStore((s) => s.removeMessage);
 
   useEffect(() => {
@@ -112,11 +113,15 @@ export function Message({
   const originalText = body || message.text || "";
 
   const isMine = variant === "mine";
-  const entering = animate
-    ? isMine
-      ? SlideInRight.duration(180)
-      : SlideInLeft.duration(180)
-    : undefined;
+  const entering =
+    animate && !hasEnteredRef.current
+      ? (() => {
+          hasEnteredRef.current = true;
+          return isMine
+            ? SlideInRight.duration(180)
+            : SlideInLeft.duration(180);
+        })()
+      : undefined;
 
   const textColor = isMine ? "text-secondary" : "text-secondary-200";
 
@@ -153,98 +158,96 @@ export function Message({
       disabled={!onLongPress}
       className="mb-1.5"
     >
-    <Animated.View
-      entering={entering}
-    >
-      <Animated.View
-        pointerEvents="none"
-        className="absolute inset-0 rounded"
-        style={[
-          { backgroundColor: "rgba(240, 240, 240, 0.18)" },
-          highlightStyle,
-        ]}
-      />
-      {showBurnRing && (
-        <View className="mb-0.5">
-          <BurnRing
-            createdAt={message.createdAt}
-            totalMs={totalMs}
-            label={message.burnOnRead ? "burn" : "ttl"}
-          />
-        </View>
-      )}
-      {message.replyTo && !isGlitching && (
-        <Pressable
-          onPress={handleQuotePress}
-          hitSlop={6}
-          disabled={!onReplyQuotePress || isGlitching}
-          className="flex-row items-stretch mb-1 ml-1 active:opacity-60"
-        >
-          <View
-            className="w-[2px] mr-2 rounded-sm"
-            style={{ backgroundColor: "#f0f0f0" }}
-          />
-          <View className="flex-1 pb-0.5">
-            <Text
-              className="text-[11px] font-fira-code"
-              style={{ color: "#f0f0f0" }}
-            >
-              @{message.replyTo.authorAlias}
-            </Text>
-            <Text
-              className="text-xs text-primary-100 font-fira-code-light"
-              numberOfLines={2}
-            >
-              {message.replyTo.text || "(empty)"}
-            </Text>
-          </View>
-        </Pressable>
-      )}
-      {isGlitching ? (
-        <View className="flex-row items-start gap-1">
-          <Text className="text-primary-100 text-sm font-fira-code tabular-nums mt-0.5">
-            {formatTime(message.createdAt)}
-          </Text>
-          <Text className="text-secondary-600 text-sm font-fira-code mt-0.5">
-            {"<"}
-            <Text className="text-secondary">@</Text>
-            {authorAlias}
-            {">"}
-          </Text>
-          <GlitchText
-            text={originalText}
-            active={isGlitching}
-            className={`text-base font-fira-code-light ${textColor} flex-1`}
-          />
-        </View>
-      ) : (
-        <Text className={`text-base font-fira-code-light ${textColor}`}>
-          <Text className="text-primary-100 text-sm font-fira-code tabular-nums">
-            {formatTime(message.createdAt)}
-          </Text>
-          {" "}
-          <Text className="text-secondary-600 text-sm font-fira-code">
-            {"<"}
-            <Text className="text-secondary">@</Text>
-            {authorAlias}
-            {">"}
-          </Text>
-          {" "}
-          {animate ? (
-            <TypewriterText
-              text={originalText}
-              enabled={animate}
-              className="text-base font-fira-code-light"
+      <Animated.View entering={entering}>
+        <Animated.View
+          pointerEvents="none"
+          className="absolute inset-0 rounded"
+          style={[
+            { backgroundColor: "rgba(240, 240, 240, 0.18)" },
+            highlightStyle,
+          ]}
+        />
+        {showBurnRing && !isGlitching && (
+          <View className="mb-0.5">
+            <BurnRing
+              createdAt={message.createdAt}
+              totalMs={totalMs}
+              label={message.burnOnRead ? "burn" : "ttl"}
             />
-          ) : (
-            originalText
-          )}
-          {message.isCanary && !isDestroyed && (
-            <Text style={{ color: canaryDotColor }}> ●</Text>
-          )}
-        </Text>
-      )}
-    </Animated.View>
+          </View>
+        )}
+        {message.replyTo && !isGlitching && (
+          <Pressable
+            onPress={handleQuotePress}
+            hitSlop={6}
+            disabled={!onReplyQuotePress || isGlitching}
+            className="flex-row items-stretch mb-1 ml-1 active:opacity-60"
+          >
+            <View
+              className="w-[2px] mr-2 rounded-sm"
+              style={{ backgroundColor: "#f0f0f0" }}
+            />
+            <View className="flex-1 pb-0.5">
+              <Text
+                className="text-[11px] font-fira-code"
+                style={{ color: "#f0f0f0" }}
+              >
+                @{message.replyTo.authorAlias}
+              </Text>
+              <Text
+                className="text-xs text-primary-100 font-fira-code-light"
+                numberOfLines={2}
+              >
+                {message.replyTo.text || "(empty)"}
+              </Text>
+            </View>
+          </Pressable>
+        )}
+        {isGlitching ? (
+          <View className="flex-row items-start gap-1">
+            <Text className="text-primary-100 text-sm font-fira-code tabular-nums mt-0.5">
+              {formatTime(message.createdAt)}
+            </Text>
+            <Text className="text-secondary-600 text-sm font-fira-code mt-0.5">
+              {"<"}
+              <Text className="text-secondary">@</Text>
+              {authorAlias}
+              {">"}
+            </Text>
+            <GlitchText
+              text={originalText}
+              active={isGlitching}
+              className={`text-base font-fira-code-light ${textColor} flex-1`}
+            />
+          </View>
+        ) : (
+          <Text className={`text-base font-fira-code-light ${textColor}`}>
+            <Text className="text-primary-100 text-sm font-fira-code tabular-nums">
+              {formatTime(message.createdAt)}
+            </Text>
+            {" "}
+            <Text className="text-secondary-600 text-sm font-fira-code">
+              {"<"}
+              <Text className="text-secondary">@</Text>
+              {authorAlias}
+              {">"}
+            </Text>
+            {" "}
+            {animate ? (
+              <TypewriterText
+                text={originalText}
+                enabled={animate}
+                className="text-base font-fira-code-light"
+              />
+            ) : (
+              originalText
+            )}
+            {message.isCanary && !isDestroyed && (
+              <Text style={{ color: canaryDotColor }}> ●</Text>
+            )}
+          </Text>
+        )}
+      </Animated.View>
     </Pressable>
   );
 }

@@ -227,7 +227,7 @@ export function MessageList({
             highlightedId,
           )
         }
-        contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 16 }}
+        contentContainerStyle={{ paddingHorizontal: 12 }}
         showsVerticalScrollIndicator={false}
         onScroll={onScroll}
         scrollEventThrottle={32}

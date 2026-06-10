@@ -12,7 +12,6 @@ import { router } from "expo-router";
 import { Colors } from "@/components/colors";
 import * as Icon from "phosphor-react-native";
 import { CommandInput } from "@/components/chat/CommandInput";
-import { ConnectionBanner } from "@/components/chat/ConnectionBanner";
 import { DebugBar } from "@/components/chat/DebugBar";
 import {
   MessageActionSheet,
@@ -91,8 +90,7 @@ export default function DMTab() {
         if (parsed.kind === "burn") {
           newMessage.burnOnRead = true;
           newMessage.burnDurationSec = parsed.durationSec ?? 5;
-          newMessage.expiresAt =
-            Date.now() + (parsed.durationSec ?? 5) * 1000;
+          newMessage.expiresAt = Date.now() + (parsed.durationSec ?? 5) * 1000;
         }
         if (parsed.kind === "ttl") {
           newMessage.expiresAt =
@@ -172,18 +170,11 @@ export default function DMTab() {
         removeMessage(THREAD_ID, m.id);
         return;
       }
-      if (action === "copy") {
-        // TODO: replace with `Clipboard.setString` from `expo-clipboard`
-        // (requires `npx expo install expo-clipboard` and a rebuild).
-        Vibration.vibrate(10);
-        return;
-      }
       if (action === "reply") {
         const alias =
           m.authorId === MY_ID
             ? MY_ALIAS
-            : (contacts.find((c) => c.id === m.authorId)?.alias ??
-              "unknown");
+            : (contacts.find((c) => c.id === m.authorId)?.alias ?? "unknown");
         const snippet = (m.text ?? "").split("\n")[0].slice(0, 120);
         setReplyTo({
           id: m.id,
@@ -213,7 +204,7 @@ export default function DMTab() {
         className="flex-1"
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <SafeAreaView className="flex-1 px-8 pt-8">
+        <SafeAreaView className="flex-1 px-4 pt-8">
           <View className="flex-row items-center justify-between">
             <TouchableOpacity
               onPress={() => router.push("/(tabs)/chat")}
@@ -239,16 +230,15 @@ export default function DMTab() {
             </View>
             <TouchableOpacity
               onPress={handleReplay}
-              className="bg-primary-500 h-10 px-3 rounded-xl flex-row items-center justify-center gap-1"
+              className="bg-primary-500 h-12 w-12 rounded-2xl items-center justify-center"
             >
-              <Icon.ArrowClockwiseIcon size={14} color={Colors.secondary[400]} />
-              <Text className="text-secondary-400 text-sm font-fira-code">
-                replay
-              </Text>
+              <Icon.ArrowClockwiseIcon
+                size={18}
+                color={Colors.secondary[400]}
+              />
             </TouchableOpacity>
           </View>
           <View className="h-px bg-primary-400 mt-4" />
-          <ConnectionBanner status={partnerStatus} />
           <View className="flex-1 -mx-3 mt-2">
             <MessageList
               messages={messages}
@@ -267,12 +257,9 @@ export default function DMTab() {
               currentStatus={partnerStatus}
             />
           )}
-          <View className="-mx-8 border-t border-primary-400">
+          <View className="-mx-4 border-t border-primary-400">
             {replyTo && (
-              <ReplyBar
-                replyTo={replyTo}
-                onCancel={() => setReplyTo(null)}
-              />
+              <ReplyBar replyTo={replyTo} onCancel={() => setReplyTo(null)} />
             )}
             <CommandInput
               value={draft}

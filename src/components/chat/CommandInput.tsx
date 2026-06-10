@@ -1,10 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import {
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { AntDesign } from "@expo/vector-icons";
 import { Colors } from "@/components/colors";
 import { getCommandQuery, parseCommand } from "@/lib/chat/commands";
@@ -100,7 +95,7 @@ export function CommandInput({
           <Text className="text-primary-100">{">"}</Text> {"<"}
           <Text className="text-secondary">@</Text>
           {myAlias}
-          {">"}/
+          {">"}
         </Text>
         <TextInput
           value={value}
@@ -110,7 +105,7 @@ export function CommandInput({
           onBlur={handleBlur}
           editable={!isSending}
           className={cn(
-            "flex-1 text-base font-fira-code-light px-4 py-2 rounded-xl border",
+            "flex-1 text-base font-fira-code-light px-4 py-2 rounded-xl mx-1 border",
             borderClass,
           )}
           placeholder={

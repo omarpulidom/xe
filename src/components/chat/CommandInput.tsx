@@ -91,13 +91,13 @@ export function CommandInput({
         />
       )}
       <View className="flex-row items-center gap-1 mx-2">
-        <Text className="text-secondary-600 text-base font-fira-code">
+        <Text className="text-secondary-600 text-lg font-fira-code">
           <Text className="text-primary-100">{">"}</Text> {"<"}
           <Text className="text-secondary">@</Text>
           {myAlias}
           {">"}
         </Text>
-        <TextInput
+        <TextInput keyboardAppearance="dark"
           value={value}
           onChangeText={handleChange}
           onSubmitEditing={handleSubmit}
@@ -105,7 +105,7 @@ export function CommandInput({
           onBlur={handleBlur}
           editable={!isSending}
           className={cn(
-            "flex-1 text-base font-fira-code-light px-4 py-2 rounded-xl mx-1 border",
+            "flex-1 text-lg font-fira-code-light px-4 py-2 rounded-xl mx-1 border",
             borderClass,
           )}
           placeholder={
@@ -124,25 +124,25 @@ export function CommandInput({
         <TouchableOpacity
           onPress={handleSubmit}
           disabled={!value.trim() || isSending || isUnknown}
-          className="border border-primary-400 h-10 w-10 rounded-xl items-center justify-center"
+          className="border border-primary-400 h-12 w-12 rounded-xl items-center justify-center"
           style={{
             opacity: !value.trim() || isSending || isUnknown ? 0.4 : 1,
           }}
         >
-          <AntDesign name="enter" size={16} color="white" />
+          <AntDesign name="enter" size={18} color="white" />
         </TouchableOpacity>
       </View>
       {isCommand && isValid && (
         <View className="mx-2 mt-2 flex-row items-center gap-2">
           <Text
-            className={`text-sm font-fira-code ${
+            className={`text-base font-fira-code ${
               parsed?.kind === "panic" ? "text-ruby" : "text-greeny-300"
             }`}
           >
             {"//"}
           </Text>
           <Text
-            className={`text-sm font-fira-code ${
+            className={`text-base font-fira-code ${
               parsed?.kind === "panic" ? "text-ruby" : "text-secondary-200"
             }`}
           >
@@ -154,8 +154,8 @@ export function CommandInput({
       )}
       {showError && (
         <View className="mx-2 mt-2 flex-row items-center gap-2">
-          <Text className="text-sm font-fira-code text-ruby">{"// err:"}</Text>
-          <Text className="text-sm font-fira-code text-ruby">
+          <Text className="text-base font-fira-code text-ruby">{"// err:"}</Text>
+          <Text className="text-base font-fira-code text-ruby">
             unknown command
           </Text>
         </View>

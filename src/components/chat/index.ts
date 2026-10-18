@@ -8,8 +8,6 @@ export * from "./BurnRing";
 export * from "./GlitchText";
 export * from "./TypingIndicator";
 export * from "./StatusDot";
-export * from "./DebugBar";
 export * from "./MessageActionSheet";
 export * from "./ScrollToBottomBadge";
 export * from "./ReplyBar";
-export * from "./PanicOverlay";

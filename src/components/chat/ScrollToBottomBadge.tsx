@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Animated, Pressable, Text, View } from "react-native";
+import { Animated, Pressable, Text } from "react-native";
 
 type Props = {
   count: number;
@@ -59,8 +59,8 @@ export function ScrollToBottomBadge({ count, onPress }: Props) {
           elevation: 4,
         }}
       >
-        <Text className="text-xs font-fira-code text-primary-600">↓</Text>
-        <Text className="text-xs font-fira-code text-primary-600">
+        <Text className="text-sm font-fira-code text-primary-600">↓</Text>
+        <Text className="text-sm font-fira-code text-primary-600">
           {count} new
         </Text>
       </Pressable>

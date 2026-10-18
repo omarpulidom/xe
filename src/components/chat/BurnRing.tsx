@@ -82,12 +82,12 @@ export function BurnRing({ createdAt, totalMs, label, size = 18 }: Props) {
         />
       </Svg>
       <Text
-        className="text-xs font-fira-code-semibold tabular-nums"
+        className="text-sm font-fira-code-semibold tabular-nums"
         style={{ color: textColor }}
       >
         {remaining}s
       </Text>
-      <Text className="text-xs font-fira-code text-primary-100 uppercase tracking-wider">
+      <Text className="text-sm font-fira-code text-primary-100 uppercase tracking-wider">
         {label}
       </Text>
     </View>

@@ -14,12 +14,12 @@ export function ReplyBar({ replyTo, onCancel }: Props) {
         style={{ backgroundColor: "#f0f0f0" }}
       />
       <View className="flex-1 px-3 py-2">
-        <Text className="text-xs font-fira-code" style={{ color: "#f0f0f0" }}>
+        <Text className="text-base font-fira-code" style={{ color: "#f0f0f0" }}>
           replying to{" "}
           <Text style={{ color: "#f0f0f0" }}>@{replyTo.authorAlias}</Text>
         </Text>
         <Text
-          className="text-sm text-secondary-200 font-fira-code-light mt-0.5"
+          className="text-base text-secondary-200 font-fira-code-light mt-0.5"
           numberOfLines={1}
         >
           {replyTo.text || "(empty)"}

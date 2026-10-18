@@ -96,7 +96,7 @@ export function MessageActionSheet({
         >
           {message && (
             <View className="px-4 pt-3 pb-2 border-b border-primary-400">
-              <Text className="text-xs text-primary-100 font-fira-code mb-1">
+              <Text className="text-base text-primary-100 font-fira-code mb-1">
                 {"// "}
                 <Text className="text-secondary-200">@{authorAlias}</Text>
                 {message.burnOnRead && (
@@ -107,7 +107,7 @@ export function MessageActionSheet({
                 )}
               </Text>
               <Text
-                className="text-sm text-secondary-200 font-fira-code-light"
+                className="text-base text-secondary-200 font-fira-code-light"
                 numberOfLines={3}
               >
                 {message.text}
@@ -128,8 +128,9 @@ export function MessageActionSheet({
                     locked
                       ? undefined
                       : () => {
+                          if (!message) return;
                           Vibration.vibrate(10);
-                          onAction(a.kind, message!);
+                          onAction(a.kind, message);
                           onClose();
                         }
                   }
@@ -139,12 +140,12 @@ export function MessageActionSheet({
                   }`}
                 >
                   <Text
-                    className="text-base font-fira-code"
+                    className="text-lg font-fira-code"
                     style={{ color: locked ? "#80837e" : a.color }}
                   >
                     {a.label}
                   </Text>
-                  <Text className="text-xs text-primary-100 font-fira-code">
+                  <Text className="text-sm text-primary-100 font-fira-code">
                     {hint}
                   </Text>
                 </Pressable>
@@ -155,7 +156,7 @@ export function MessageActionSheet({
             onPress={onClose}
             className="py-3 items-center border-t border-primary-400"
           >
-            <Text className="text-sm text-primary-100 font-fira-code">
+            <Text className="text-base text-primary-100 font-fira-code">
               cancel
             </Text>
           </Pressable>

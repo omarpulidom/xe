@@ -8,9 +8,6 @@ export type ParsedCommand = {
 };
 
 const KNOWN_COMMANDS = new Set([
-  "burn",
-  "steg",
-  "canary",
   "ttl",
   "clear",
   "panic",
@@ -66,21 +63,6 @@ export type CommandMeta = {
 };
 
 export const COMMAND_LIST: CommandMeta[] = [
-  {
-    name: "burn",
-    description: "self-destruct on read",
-    example: "/burn 30s secret",
-  },
-  {
-    name: "steg",
-    description: "hide text in image",
-    example: "/steg secret",
-  },
-  {
-    name: "canary",
-    description: "alerts sender if read",
-    example: "/canary bait",
-  },
   {
     name: "ttl",
     description: "expires after duration",

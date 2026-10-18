@@ -12,17 +12,17 @@ import { Pressable, Text, Vibration, View } from "react-native";
 import { formatTime } from "@/lib/chat/format";
 import { parseCommand } from "@/lib/chat/commands";
 import { useChatStore } from "@/store/chat.store";
-import type { Message, MessageVariant } from "@/lib/chat/types";
+import type { Message as ChatMessage, MessageVariant } from "@/lib/chat/types";
 import { TypewriterText } from "./TypewriterText";
 import { GlitchText } from "./GlitchText";
 import { BurnRing } from "./BurnRing";
 
 type Props = {
-  message: Message;
+  message: ChatMessage;
   variant: MessageVariant;
   authorAlias: string;
   animate: boolean;
-  onLongPress?: (message: Message) => void;
+  onLongPress?: (message: ChatMessage) => void;
   onReplyQuotePress?: (messageId: string) => void;
   isHighlighted?: boolean;
 };
@@ -51,7 +51,7 @@ export function Message({
     }
 
     const wasActive =
-      prevStatus.current === "read" || prevStatus.current === "delivered";
+      prevStatus.current === "read" || prevStatus.current === "delivered" || prevStatus.current === "sent";
     const nowDestroyed =
       message.status === "burned" || message.status === "expired";
 
@@ -64,7 +64,7 @@ export function Message({
     }
 
     prevStatus.current = message.status;
-  }, [message.status, isGlitching, removeMessage]);
+  }, [message.status, message.id, message.threadId, isGlitching, removeMessage]);
 
   useEffect(() => {
     if (!isGlitching) return;
@@ -101,7 +101,7 @@ export function Message({
   if (variant === "system") {
     return (
       <View className="items-center my-1">
-        <Text className="text-primary-100 text-sm font-fira-code">
+        <Text className="text-primary-100 text-lg font-fira-code">
           {message.text}
         </Text>
       </View>
@@ -189,13 +189,13 @@ export function Message({
             />
             <View className="flex-1 pb-0.5">
               <Text
-                className="text-[11px] font-fira-code"
+                className="text-sm font-fira-code"
                 style={{ color: "#f0f0f0" }}
               >
                 @{message.replyTo.authorAlias}
               </Text>
               <Text
-                className="text-xs text-primary-100 font-fira-code-light"
+                className="text-base text-primary-100 font-fira-code-light"
                 numberOfLines={2}
               >
                 {message.replyTo.text || "(empty)"}
@@ -205,10 +205,10 @@ export function Message({
         )}
         {isGlitching ? (
           <View className="flex-row items-start gap-1">
-            <Text className="text-primary-100 text-sm font-fira-code tabular-nums mt-0.5">
+            <Text className="text-primary-100 text-base font-fira-code tabular-nums mt-0.5">
               {formatTime(message.createdAt)}
             </Text>
-            <Text className="text-secondary-600 text-sm font-fira-code mt-0.5">
+            <Text className="text-secondary-600 text-base font-fira-code mt-0.5">
               {"<"}
               <Text className="text-secondary">@</Text>
               {authorAlias}
@@ -217,16 +217,16 @@ export function Message({
             <GlitchText
               text={originalText}
               active={isGlitching}
-              className={`text-base font-fira-code-light ${textColor} flex-1`}
+              className={`text-lg font-fira-code-light ${textColor} flex-1`}
             />
           </View>
         ) : (
-          <Text className={`text-base font-fira-code-light ${textColor}`}>
-            <Text className="text-primary-100 text-sm font-fira-code tabular-nums">
+          <Text className={`text-lg font-fira-code-light ${textColor}`}>
+            <Text className="text-primary-100 text-base font-fira-code tabular-nums">
               {formatTime(message.createdAt)}
             </Text>
             {" "}
-            <Text className="text-secondary-600 text-sm font-fira-code">
+            <Text className="text-secondary-600 text-base font-fira-code">
               {"<"}
               <Text className="text-secondary">@</Text>
               {authorAlias}
@@ -237,7 +237,7 @@ export function Message({
               <TypewriterText
                 text={originalText}
                 enabled={animate}
-                className="text-base font-fira-code-light"
+                className="text-lg font-fira-code-light"
               />
             ) : (
               originalText

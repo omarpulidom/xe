@@ -57,7 +57,7 @@ export function TypingIndicator({ authorAlias }: Props) {
 
   return (
     <View className="flex-row items-baseline gap-1 mb-1.5">
-      <Text className="text-sm font-fira-code">
+      <Text className="text-base font-fira-code">
         <Text className="text-secondary-600">{"<"}</Text>
         <Text className="text-secondary">@</Text>
         <Text className="text-secondary-600">{authorAlias}</Text>
@@ -67,19 +67,19 @@ export function TypingIndicator({ authorAlias }: Props) {
       <View className="flex-row items-baseline">
         <Animated.Text
           style={dot1Style}
-          className="text-secondary-200 text-sm font-fira-code"
+          className="text-secondary-200 text-base font-fira-code"
         >
           .
         </Animated.Text>
         <Animated.Text
           style={dot2Style}
-          className="text-secondary-200 text-sm font-fira-code"
+          className="text-secondary-200 text-base font-fira-code"
         >
           .
         </Animated.Text>
         <Animated.Text
           style={dot3Style}
-          className="text-secondary-200 text-sm font-fira-code"
+          className="text-secondary-200 text-base font-fira-code"
         >
           .
         </Animated.Text>

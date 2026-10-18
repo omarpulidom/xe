@@ -59,6 +59,7 @@ export function MessageList({
   );
 
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const initialMessagesRef = useRef(messages);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [isReady, setIsReady] = useState(false);
 
@@ -70,7 +71,7 @@ export function MessageList({
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    for (const m of messages) {
+    for (const m of initialMessagesRef.current) {
       seenIdsRef.current.add(m.id);
     }
     setIsReady(true);
@@ -122,7 +123,7 @@ export function MessageList({
       for (const threadId of Object.keys(store.messages)) {
         for (const msg of store.messages[threadId]) {
           if (
-            (msg.status === "read" || msg.status === "delivered") &&
+            (msg.status === "read" || msg.status === "delivered" || msg.status === "sent") &&
             msg.expiresAt &&
             msg.expiresAt <= now
           ) {
@@ -201,7 +202,7 @@ export function MessageList({
   if (visibleRows.length === 0) {
     return (
       <View className="flex-1 items-center justify-center">
-        <Text className="text-primary-100 text-sm font-fira-code">
+        <Text className="text-primary-100 text-lg font-fira-code">
           {emptyText}
         </Text>
       </View>
@@ -265,7 +266,7 @@ function renderRow(
   if (row.type === "date") {
     return (
       <View className="my-3 items-center">
-        <Text className="text-xs text-primary-100 font-fira-code">
+        <Text className="text-base text-primary-100 font-fira-code">
           {formatDate(row.date)}
         </Text>
       </View>

@@ -13,8 +13,8 @@ export function CommandPalette({ query, onSelect }: Props) {
   if (filtered.length === 0) {
     return (
       <View className="mx-2 mb-2 px-3 py-2 bg-primary-600 border border-primary-400 rounded-xl">
-        <Text className="text-primary-100 text-sm font-fira-code">
-          // no commands match "/{query}"
+        <Text className="text-primary-100 text-base font-fira-code">
+          {`// no commands match "/${query}"`}
         </Text>
       </View>
     );
@@ -39,11 +39,11 @@ export function CommandPalette({ query, onSelect }: Props) {
                 isExact ? "bg-primary-500" : "",
               )}
             >
-              <Text className="text-secondary-200 text-sm font-fira-code">
+              <Text className="text-secondary-200 text-base font-fira-code">
                 /{cmd.name}
               </Text>
               <Text
-                className="text-primary-100 text-sm font-fira-code-light flex-shrink"
+                className="text-primary-100 text-base font-fira-code-light flex-shrink"
                 numberOfLines={1}
               >
                 {cmd.description}

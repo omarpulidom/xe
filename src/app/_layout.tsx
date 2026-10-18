@@ -2,12 +2,13 @@ import "../global.css";
 import { useFonts } from "@expo-google-fonts/montserrat";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as ScreenCapture from "expo-screen-capture";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppFonts } from "@/components/fonts/fonts";
 import { AppProviders } from "@/components/Providers/AppProviders";
-import { Linking, View } from "react-native";
+import { Linking, Platform, View } from "react-native";
 import { useVault } from "@/components/Providers/VaultProvider";
 import { queueImportPath, subscribeImportPath, takeImportPath } from "@/lib/vault/pendingImport";
 
@@ -71,6 +72,18 @@ export default function RootLayout() {
     ...AppFonts,
   });
   const lastHandledImport = useRef<string | null>(null);
+
+  useEffect(() => {
+    const protectAppPreview = Platform.OS === "ios"
+      ? ScreenCapture.enableAppSwitcherProtectionAsync(1)
+      : Platform.OS === "android"
+        ? ScreenCapture.preventScreenCaptureAsync("xe-app-preview")
+        : Promise.resolve();
+
+    protectAppPreview.catch((error) => {
+      console.error("[RootLayout] app preview protection error:", error);
+    });
+  }, []);
 
   useEffect(() => {
     if (loaded || error) {

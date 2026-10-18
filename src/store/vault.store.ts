@@ -50,6 +50,8 @@ export const createVaultSlice: GlobalTypedStateCreator<VaultSlice> = (set) => ({
         ...state.vault,
         isUnlocked: false,
         masterKey: null,
+        currentUnlockTime: null,
+        lastUnlockTime: null,
       },
     })),
 });

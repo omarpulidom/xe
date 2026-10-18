@@ -8,11 +8,16 @@ import {
   publicEncrypt,
   randomUUID,
 } from "react-native-quick-crypto";
-import { storageMMKV } from "@/lib/mmkv/stores";
+import { readProfileValue, writeProfileValue } from "./profileStorage";
 
 const KEY_DEVICE_PRIVATE_PEM = "vault_recipient_private_pem";
 const KEY_DEVICE_PUBLIC_PEM = "vault_recipient_public_pem";
 const KEY_CONTACTS = "vault_recipient_contacts_v1";
+
+export async function clearLegacyRecipientIdentity() {
+  await SecureStore.deleteItemAsync(KEY_DEVICE_PRIVATE_PEM);
+  await SecureStore.deleteItemAsync(KEY_DEVICE_PUBLIC_PEM);
+}
 
 export type RecipientContact = {
   id: string;
@@ -33,7 +38,7 @@ function makeFingerprint(publicKeyPem: string): string {
 }
 
 function readContacts(): RecipientContact[] {
-  const raw = storageMMKV.getString(KEY_CONTACTS);
+  const raw = readProfileValue(KEY_CONTACTS);
   if (!raw) return [];
 
   try {
@@ -45,16 +50,12 @@ function readContacts(): RecipientContact[] {
 }
 
 function writeContacts(contacts: RecipientContact[]): void {
-  storageMMKV.set(KEY_CONTACTS, JSON.stringify(contacts));
+  writeProfileValue(KEY_CONTACTS, JSON.stringify(contacts));
 }
 
 export async function ensureLocalRecipientIdentity(): Promise<LocalRecipientIdentity> {
-  let privatePem: string | null = await SecureStore.getItemAsync(
-    KEY_DEVICE_PRIVATE_PEM,
-  );
-  let publicPem: string | null = await SecureStore.getItemAsync(
-    KEY_DEVICE_PUBLIC_PEM,
-  );
+  let privatePem: string | null = readProfileValue(KEY_DEVICE_PRIVATE_PEM);
+  let publicPem: string | null = readProfileValue(KEY_DEVICE_PUBLIC_PEM);
 
   if (!privatePem || !publicPem) {
     const pair = generateKeyPairSync("rsa", {
@@ -79,8 +80,8 @@ export async function ensureLocalRecipientIdentity(): Promise<LocalRecipientIden
     publicPem = pair.publicKey;
     privatePem = pair.privateKey;
 
-    await SecureStore.setItemAsync(KEY_DEVICE_PRIVATE_PEM, privatePem);
-    await SecureStore.setItemAsync(KEY_DEVICE_PUBLIC_PEM, publicPem);
+    writeProfileValue(KEY_DEVICE_PRIVATE_PEM, privatePem);
+    writeProfileValue(KEY_DEVICE_PUBLIC_PEM, publicPem);
   }
 
   if (!publicPem) {
@@ -96,7 +97,7 @@ export async function ensureLocalRecipientIdentity(): Promise<LocalRecipientIden
 }
 
 export async function getLocalRecipientIdentity(): Promise<LocalRecipientIdentity | null> {
-  const publicPem = await SecureStore.getItemAsync(KEY_DEVICE_PUBLIC_PEM);
+  const publicPem = readProfileValue(KEY_DEVICE_PUBLIC_PEM);
   if (!publicPem) return null;
 
   const fingerprint = makeFingerprint(publicPem);
@@ -162,7 +163,7 @@ export function wrapDerivedKeyForRecipient(input: {
 export async function unwrapDerivedKeyWithLocalIdentity(
   wrappedDerivedKeyB64: string,
 ): Promise<string | null> {
-  const privatePem = await SecureStore.getItemAsync(KEY_DEVICE_PRIVATE_PEM);
+  const privatePem = readProfileValue(KEY_DEVICE_PRIVATE_PEM);
   if (!privatePem) return null;
 
   try {

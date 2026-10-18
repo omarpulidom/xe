@@ -23,7 +23,7 @@
           "imageWidth": 150
         }
       ],
-      "expo-sqlite",
+      ["expo-sqlite", { "useSQLCipher": true }],
       "expo-secure-store",
       "expo-video"
     ],

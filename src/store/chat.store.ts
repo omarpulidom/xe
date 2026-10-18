@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { zustandMMKVStorage } from "@/lib/mmkv";
+import { getActiveProfile } from "@/lib/vault/profiles";
+import { readProfileValue, writeProfileValue, removeProfileValue } from "@/lib/vault/profileStorage";
 import type { Contact, Message, MessageStatus } from "@/lib/chat/types";
 
-const CHAT_STORE_NAME = "umbra-chat-v1";
+const CHAT_STORE_NAME = "xe-chat-v1";
 
 type ChatState = {
   messages: Record<string, Message[]>;
@@ -29,22 +30,7 @@ type ChatActions = {
 
 export type ChatStore = ChatState & ChatActions;
 
-const initialContacts: Contact[] = [
-  {
-    id: "self_pm",
-    alias: "pm",
-    fingerprint: "self_a1b2c3d4e5f60718",
-    status: "p2p",
-    lastSeen: Date.now(),
-  },
-  {
-    id: "uriel",
-    alias: "uriel",
-    fingerprint: "9c4f7e2a8b1d3f5c",
-    status: "p2p",
-    lastSeen: Date.now(),
-  },
-];
+const initialContacts: Contact[] = [];
 
 const initialState: ChatState = {
   messages: {},
@@ -142,26 +128,32 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: CHAT_STORE_NAME,
-      storage: createJSONStorage(() => zustandMMKVStorage),
+      storage: createJSONStorage(() => ({
+        getItem: (name) => readProfileValue(name),
+        setItem: (name, value) => {
+          if (getActiveProfile()) writeProfileValue(name, value);
+        },
+        removeItem: (name) => {
+          const profile = getActiveProfile();
+          if (profile) removeProfileValue(name, profile.id);
+        },
+      })),
+      skipHydration: true,
       partialize: (state) => ({
         messages: state.messages,
+        contacts: state.contacts,
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as
           | {
               messages?: Record<string, Message[]>;
+              contacts?: Contact[];
             }
           | undefined;
-        const rawMessages = persisted?.messages ?? {};
-        const migrated: Record<string, Message[]> = {};
-        for (const [threadId, msgs] of Object.entries(rawMessages)) {
-          migrated[threadId] = msgs.map((m) =>
-            m.authorId === "mavri" ? { ...m, authorId: "uriel" } : m,
-          );
-        }
         return {
           ...currentState,
-          messages: migrated,
+          messages: persisted?.messages ?? {},
+          contacts: persisted?.contacts ?? [],
         };
       },
     },

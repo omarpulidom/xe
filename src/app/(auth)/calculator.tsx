@@ -32,7 +32,7 @@ const CALC_BUTTONS = [
 
 export default function CalculatorScreen() {
   const router = useRouter();
-  const { isSetup, setup, unlock, isLockedOut, failedAttempts } = useVault();
+  const { isSetup, setup, unlock, isLockedOut, lockedUntil, failedAttempts, initializationError } = useVault();
   const [display, setDisplay] = useState("0");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,23 +62,18 @@ export default function CalculatorScreen() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (isLockedOut) {
+    if (isLockedOut && lockedUntil) {
       const tick = () => {
-        // Recalculate remaining time
-        setLockCountdown((prev) => {
-          if (prev <= 1) {
-            if (intervalRef.current) clearInterval(intervalRef.current);
-            return 0;
-          }
-          return prev - 1;
-        });
+        setLockCountdown(Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000)));
       };
+      tick();
       intervalRef.current = setInterval(tick, 1000);
       return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
       };
     }
-  }, [isLockedOut]);
+    setLockCountdown(0);
+  }, [isLockedOut, lockedUntil]);
 
   const handleDigit = useCallback(
     (digit: string) => {
@@ -112,8 +107,8 @@ export default function CalculatorScreen() {
     const pinCandidate = display;
 
     // Minimum PIN length check
-    if (pinCandidate.length < 4) {
-      setError("min 4 digits");
+    if (pinCandidate.length < (isSetup ? 6 : 8)) {
+      setError(isSetup ? "min 6 digits" : "min 8 digits");
       triggerShake();
       return;
     }
@@ -172,7 +167,7 @@ export default function CalculatorScreen() {
       }
     } catch (err) {
       console.error("[Calculator] error:", err);
-      setError("error");
+      setError(isSetup ? "could not unlock" : "set a device passcode and retry");
       triggerShake();
     } finally {
       setIsLoading(false);
@@ -275,6 +270,7 @@ export default function CalculatorScreen() {
     <SafeAreaView className="flex-1 bg-primary px-6 pt-4">
       {/* Display */}
       <View className="flex-1 justify-end pb-6 px-2">
+        {initializationError && <Text className="text-red-500 font-fira-code text-right mb-4">{initializationError}</Text>}
         {statusText && (
           <Animated.View entering={FadeIn.duration(200)}>
             <Text className="text-secondary-500 text-lg font-fira-code text-right mb-2">
@@ -346,7 +342,7 @@ export default function CalculatorScreen() {
                 <TouchableOpacity
                   key={btn}
                   onPress={() => handleButtonPress(btn)}
-                  disabled={isLoading}
+                  disabled={isLoading || !!initializationError}
                   className={`
                     ${getButtonStyle(btn)}
                     ${isZero ? "flex-2" : "flex-1"}

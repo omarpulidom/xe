@@ -1,4 +1,7 @@
 import * as SQLite from "expo-sqlite";
+import { Paths } from "expo-file-system";
+import fs from "react-native-nitro-file-system";
+import { getActiveProfile, deriveProfileKey } from "./profiles";
 
 /**
  * Vault SQLite database — metadata for albums and encrypted files.
@@ -10,39 +13,84 @@ import * as SQLite from "expo-sqlite";
  */
 
 let db: SQLite.SQLiteDatabase | null = null;
+let openProfileId: string | null = null;
+let opening: Promise<SQLite.SQLiteDatabase> | null = null;
+let openingId: string | null = null;
+
+const SCHEMA = `
+  PRAGMA journal_mode = WAL;
+  PRAGMA foreign_keys = ON;
+  CREATE TABLE IF NOT EXISTS albums (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE TABLE IF NOT EXISTS files (
+    id TEXT PRIMARY KEY NOT NULL,
+    album_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    mime TEXT NOT NULL DEFAULT 'application/octet-stream',
+    size INTEGER NOT NULL DEFAULT 0,
+    encrypted_key TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS vault_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event TEXT NOT NULL,
+    details TEXT,
+    timestamp INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+`;
+
+export async function openProfileDB(id: string, masterKey: Uint8Array): Promise<SQLite.SQLiteDatabase> {
+  if (db && openProfileId === id) return db;
+  if (opening) {
+    if (openingId === id) return opening;
+    await opening;
+  }
+  openingId = id;
+  opening = (async () => {
+    await closeDB();
+    const candidate = await SQLite.openDatabaseAsync(`${id}.db`);
+    try {
+      const key = deriveProfileKey(masterKey, "database");
+      await candidate.execAsync(`PRAGMA key = "x'${key}'";`);
+      await candidate.getFirstAsync("SELECT count(*) AS count FROM sqlite_master");
+      await candidate.execAsync(SCHEMA);
+      db = candidate;
+      openProfileId = id;
+      return candidate;
+    } catch (error) {
+      await candidate.closeAsync();
+      throw error;
+    }
+  })();
+  try {
+    return await opening;
+  } finally {
+    opening = null;
+    openingId = null;
+  }
+}
+
+export async function initializeProfileDB(id: string, masterKey: Uint8Array): Promise<void> {
+  const candidate = await SQLite.openDatabaseAsync(`${id}.db`);
+  try {
+    const key = deriveProfileKey(masterKey, "database");
+    await candidate.execAsync(`PRAGMA key = "x'${key}'";`);
+    await candidate.getFirstAsync("SELECT count(*) AS count FROM sqlite_master");
+    await candidate.execAsync(SCHEMA);
+  } finally {
+    await candidate.closeAsync();
+  }
+}
 
 export async function getDB(): Promise<SQLite.SQLiteDatabase> {
-  if (db) return db;
-  db = await SQLite.openDatabaseAsync("vault.db");
-  await db.execAsync(`
-    PRAGMA journal_mode = WAL;
-
-    CREATE TABLE IF NOT EXISTS albums (
-      id TEXT PRIMARY KEY NOT NULL,
-      name TEXT NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS files (
-      id TEXT PRIMARY KEY NOT NULL,
-      album_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      mime TEXT NOT NULL DEFAULT 'application/octet-stream',
-      size INTEGER NOT NULL DEFAULT 0,
-      encrypted_key TEXT NOT NULL,
-      file_path TEXT NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-      FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS vault_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event TEXT NOT NULL,
-      details TEXT,
-      timestamp INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    );
-  `);
-  return db;
+  const profile = getActiveProfile();
+  if (!profile) throw new Error("Vault is locked");
+  return openProfileDB(profile.id, profile.masterKey);
 }
 
 export async function dropAllTables(): Promise<void> {
@@ -52,7 +100,7 @@ export async function dropAllTables(): Promise<void> {
     DROP TABLE IF EXISTS files;
     DROP TABLE IF EXISTS albums;
   `);
-  db = null;
+  await closeDB();
 }
 
 // ─── Albums ──────────────────────────────────────────────
@@ -131,7 +179,9 @@ export async function renameAlbum(id: string, name: string): Promise<void> {
 
 export async function deleteAlbum(id: string): Promise<void> {
   const database = await getDB();
+  const files = await database.getAllAsync<{file_path:string}>("SELECT file_path FROM files WHERE album_id = ?", [id]);
   await database.runAsync("DELETE FROM albums WHERE id = ?", [id]);
+  for (const file of files) removeEncryptedFile(file.file_path);
 }
 
 export async function getAlbumCount(): Promise<number> {
@@ -183,7 +233,16 @@ export async function createFile(
 
 export async function deleteFile(id: string): Promise<void> {
   const database = await getDB();
+  const file = await database.getFirstAsync<{file_path:string}>("SELECT file_path FROM files WHERE id = ?", [id]);
   await database.runAsync("DELETE FROM files WHERE id = ?", [id]);
+  if (file) removeEncryptedFile(file.file_path);
+}
+
+function removeEncryptedFile(name: string) {
+  if (!/^[0-9a-f-]{36}\.enc$/i.test(name)) return;
+  const documentPath = Paths.document.uri.replace(/^file:\/\//, "").replace(/\/$/, "");
+  const path = `${documentPath}/${name}`;
+  if (fs.existsSync(path)) fs.unlinkSync(path);
 }
 
 export async function renameFile(id: string, name: string): Promise<void> {
@@ -255,5 +314,11 @@ export async function closeDB(): Promise<void> {
   if (db) {
     await db.closeAsync();
     db = null;
+    openProfileId = null;
   }
+}
+
+export async function deleteProfileDB(id: string): Promise<void> {
+  if (openProfileId === id) await closeDB();
+  await SQLite.deleteDatabaseAsync(`${id}.db`);
 }

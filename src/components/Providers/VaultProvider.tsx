@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { Paths } from "expo-file-system"; // kept only for document/cache directory path constants
-import fs from "react-native-nitro-file-system";
+import fs, { getTempPath } from "react-native-nitro-file-system";
 
 /** Converts an expo Directory.uri (file://...) to a plain POSIX path for nitro-fs. */
 function dirPath(dir: { uri: string }): string {
@@ -19,11 +19,7 @@ function dirPath(dir: { uri: string }): string {
 import * as Updates from "expo-updates";
 import { randomUUID } from "react-native-quick-crypto";
 import {
-  deriveKeyFromPIN,
-  generateSalt,
   generateMasterKey,
-  encryptMasterKey,
-  decryptMasterKey,
   resetAttempts,
   recordFailedAttempt,
   getFailedAttempts,
@@ -36,21 +32,62 @@ import {
   decryptFile,
 } from "@/lib/crypto";
 import {
-  isVaultSetup as checkVaultSetup,
-  saveSalt,
-  loadSalt,
-  saveMasterKeyEnc,
-  loadMasterKeyEnc,
-  markVaultSetupComplete,
-  clearVault,
-  dropAllTables,
+  clearLegacyVault,
   addLog,
   createFile,
   getDB,
+  closeDB,
+  openProfileDB,
+  initializeProfileDB,
+  deleteProfileDB,
+  clearLegacyRecipientIdentity,
   type VaultFile,
 } from "@/lib/vault";
 import { WARNING_CLEAR_ALL_MMKVS_INSTANCES } from "@/lib/mmkv/stores";
 import { useGlobalStore } from "@/store";
+import { useChatStore } from "@/store/chat.store";
+import { WARNING_CLEAR_QUERY_CLIENT } from "@/lib/qc";
+import { removeProfileValue } from "@/lib/vault/profileStorage";
+import {
+  addProfileSlot,
+  clearActiveProfile,
+  clearProfileSlots,
+  getActiveProfile,
+  loadProfileSlots,
+  isFreshInstallPrepared,
+  markFreshInstallPrepared,
+  makeProfileSlot,
+  randomProfileKey,
+  removeProfileSlot,
+  replaceProfileSlot,
+  resolveProfile,
+  setActiveProfile,
+  type ProfileRole,
+} from "@/lib/vault/profiles";
+
+function removeDirectoryContents(dir: { uri: string }) {
+  const path = dirPath(dir);
+  if (!fs.existsSync(path)) return;
+  for (const name of fs.readdirSync(path) as string[]) {
+    fs.rmSync(`${path}/${name}`, { recursive: true });
+  }
+}
+
+function removeCachedPackages() {
+  const path = getTempPath();
+  if (!fs.existsSync(path)) return;
+  for (const name of fs.readdirSync(path) as string[]) {
+    if (name.endsWith(".xe")) fs.unlinkSync(`${path}/${name}`);
+  }
+}
+
+function removeDecryptedTempFiles() {
+  const path = dirPath(Paths.cache);
+  if (!fs.existsSync(path)) return;
+  for (const name of fs.readdirSync(path) as string[]) {
+    if (name.startsWith("temp_")) fs.unlinkSync(`${path}/${name}`);
+  }
+}
 
 type VaultContextValue = {
   /** Whether the vault is unlocked and master key is in memory */
@@ -59,6 +96,7 @@ type VaultContextValue = {
   isSetup: boolean;
   /** Whether we're still loading initial state */
   isInitializing: boolean;
+  initializationError: string | null;
   /** Number of failed PIN attempts */
   failedAttempts: number;
   /** Timestamp until which the vault is locked out */
@@ -67,10 +105,14 @@ type VaultContextValue = {
   isLockedOut: boolean;
   /** Previous successful unlock timestamp (login before current session) */
   lastUnlockTime: number | null;
+  activeRole: ProfileRole | null;
+  hasDecoy: boolean;
   /** Set up vault for the first time with a PIN */
   setup: (pin: string) => Promise<void>;
   /** Attempt to unlock the vault with a PIN */
   unlock: (pin: string) => Promise<boolean>;
+  createDecoy: (pin: string) => Promise<void>;
+  changeDecoyPin: (oldPin: string, newPin: string) => Promise<void>;
   /** Lock the vault (wipe master key from memory and clear cache) */
   lock: () => Promise<void>;
   /** Get the raw master key (only available when unlocked) */
@@ -85,7 +127,8 @@ type VaultContextValue = {
   /** Decrypts a file temporarily to CacheDirectory for viewing. Returns the URI of the decrypted file. */
   decryptFileToCache: (fileId: string) => Promise<string | null>;
   /** [DEV] Wipes ALL app data: SecureStore, SQLite, encrypted files, MMKV */
-  resetAllData: () => Promise<void>;
+  resetAllData: (pin: string) => Promise<void>;
+  deleteDecoySpace: (pin: string) => Promise<void>;
   // Future biometry:
   // unlockWithBiometry: () => Promise<boolean>
   // isBiometryEnabled: boolean
@@ -101,8 +144,12 @@ type VaultProviderProps = {
 export function VaultProvider({ children }: VaultProviderProps) {
   const [isSetup, setIsSetup] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [initializationError, setInitializationError] = useState<string | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [clockNow, setClockNow] = useState(Date.now());
+  const [activeRole, setActiveRole] = useState<ProfileRole | null>(null);
+  const [hasDecoy, setHasDecoy] = useState(false);
 
   const isUnlocked = useGlobalStore((state) => state.vault.isUnlocked);
   const lastUnlockTime = useGlobalStore((state) => state.vault.lastUnlockTime);
@@ -115,14 +162,29 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
     const init = async () => {
       try {
-        const vaultExists = await checkVaultSetup();
+        const slots = await loadProfileSlots();
+        if (slots.length === 0 && !(await isFreshInstallPrepared())) {
+          // The user chose a clean start: discard all pre-profile app data.
+          await clearLegacyVault();
+          await clearLegacyRecipientIdentity();
+          WARNING_CLEAR_ALL_MMKVS_INSTANCES();
+          await closeDB();
+          removeDirectoryContents(Paths.document);
+          removeDirectoryContents(Paths.cache);
+          removeCachedPackages();
+          useChatStore.getState().resetChat();
+          await markFreshInstallPrepared();
+          try { await Updates.reloadAsync(); } catch { /* development clients may not support reloadAsync */ }
+        }
         if (mounted) {
-          setIsSetup(vaultExists);
+          setIsSetup(slots.length > 0);
+          setHasDecoy(slots.length > 1);
           setFailedAttempts(getFailedAttempts());
           setLockedUntil(getLockedUntil());
         }
       } catch (error) {
         console.error("[VaultProvider] init error:", error);
+        if (mounted) setInitializationError("Could not prepare secure storage. Restart the app.");
       } finally {
         if (mounted) {
           setIsInitializing(false);
@@ -139,34 +201,29 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
   const setup = useCallback(
     async (pin: string) => {
-      // 1. Generate salt
-      const salt = await generateSalt();
-
-      // 2. Derive key from PIN
-      const derivedKey = await deriveKeyFromPIN(pin, salt);
-
-      // 3. Generate master key
+      if (initializationError) throw new Error(initializationError);
+      if (!/^\d{8,}$/.test(pin)) throw new Error("Real PIN needs at least 8 digits");
       const masterKey = await generateMasterKey();
-
-      // 4. Encrypt master key with derived key
-      const encryptedMK = encryptMasterKey(masterKey, derivedKey);
-
-      // 5. Save everything to secure storage
-      await saveSalt(salt);
-      await saveMasterKeyEnc(encryptedMK);
-      await markVaultSetupComplete();
-
-      // 6. Log the event
+      const slot = await makeProfileSlot(pin, "real", masterKey);
+      try {
+        await openProfileDB(slot.id, masterKey);
+        await addProfileSlot(slot);
+      } catch (error) {
+        await deleteProfileDB(slot.id);
+        masterKey.fill(0);
+        throw error;
+      }
+      setActiveProfile({ id: slot.id, role: "real", masterKey });
+      useChatStore.getState().resetChat();
       await addLog("vault_created", "Vault created successfully");
-
-      // 7. Set state
       setUnlocked(masterKey);
+      setActiveRole("real");
       setIsSetup(true);
       resetAttempts();
       setFailedAttempts(0);
       setLockedUntil(null);
     },
-    [setUnlocked],
+    [setUnlocked, initializationError],
   );
 
   const unlock = useCallback(
@@ -177,37 +234,36 @@ export function VaultProvider({ children }: VaultProviderProps) {
         return false;
       }
 
-      // 1. Load salt
-      const salt = await loadSalt();
-      if (!salt) {
-        console.error("[VaultProvider] No salt found");
-        return false;
-      }
-
-      // 2. Derive key from PIN
-      const derivedKey = await deriveKeyFromPIN(pin, salt);
-
-      // 3. Load encrypted master key
-      const encryptedMK = await loadMasterKeyEnc();
-      if (!encryptedMK) {
-        console.error("[VaultProvider] No encrypted master key found");
-        return false;
-      }
-
-      // 4. Attempt decryption
-      const masterKey = decryptMasterKey(encryptedMK, derivedKey);
-
-      if (!masterKey) {
+      const resolved = await resolveProfile(pin);
+      if (!resolved) {
         // Wrong PIN
         const result = recordFailedAttempt();
         setFailedAttempts(result.attempts);
         setLockedUntil(result.lockedUntil);
-        await addLog("unlock_failed", `Failed attempt #${result.attempts}`);
         return false;
       }
-
-      // Success!
-      setUnlocked(masterKey);
+      try {
+        await openProfileDB(resolved.slot.id, resolved.masterKey);
+        setActiveProfile({ id: resolved.slot.id, role: resolved.role, masterKey: resolved.masterKey });
+        WARNING_CLEAR_QUERY_CLIENT();
+        await useChatStore.persist.rehydrate();
+        const chat = useChatStore.getState();
+        for (const [threadId, messages] of Object.entries(chat.messages)) {
+          for (const message of messages) {
+            if (message.status === "expired" || message.status === "burned" || (message.expiresAt && message.expiresAt <= Date.now())) {
+              chat.removeMessage(threadId, message.id);
+            }
+          }
+        }
+      } catch (error) {
+        await closeDB();
+        clearActiveProfile();
+        resolved.masterKey.fill(0);
+        useChatStore.getState().resetChat();
+        throw error;
+      }
+      setUnlocked(resolved.masterKey);
+      setActiveRole(resolved.role);
       resetAttempts();
       setFailedAttempts(0);
       setLockedUntil(null);
@@ -218,24 +274,78 @@ export function VaultProvider({ children }: VaultProviderProps) {
     [setUnlocked],
   );
 
+  const createDecoy = useCallback(async (pin: string) => {
+    const current = getActiveProfile();
+    if (!current || current.role !== "real") throw new Error("Unlock the real space first");
+    if (!/^\d{6,}$/.test(pin)) throw new Error("Decoy PIN needs at least 6 digits");
+    const existing = await resolveProfile(pin);
+    if (existing) {
+      existing.masterKey.fill(0);
+      throw new Error("Choose a different PIN");
+    }
+    if ((await loadProfileSlots()).length > 1) throw new Error("Decoy already exists");
+    const masterKey = randomProfileKey();
+    const slot = await makeProfileSlot(pin, "decoy", masterKey);
+    let committed = false;
+    try {
+      await initializeProfileDB(slot.id, masterKey);
+      await addProfileSlot(slot);
+      committed = true;
+      setHasDecoy(true);
+    } finally {
+      if (!committed) await deleteProfileDB(slot.id);
+      masterKey.fill(0);
+    }
+  }, []);
+
+  const changeDecoyPin = useCallback(async (oldPin: string, newPin: string) => {
+    const current = getActiveProfile();
+    if (!current || current.role !== "real") throw new Error("Unlock the real space first");
+    if (!/^\d{6,}$/.test(newPin)) throw new Error("New PIN needs at least 6 digits");
+    const existing = await resolveProfile(newPin);
+    if (existing) {
+      existing.masterKey.fill(0);
+      throw new Error("Choose a different PIN");
+    }
+    const resolved = await resolveProfile(oldPin);
+    if (!resolved || resolved.role !== "decoy") {
+      resolved?.masterKey.fill(0);
+      throw new Error("Current alternate PIN is incorrect");
+    }
+    try {
+      const next = await makeProfileSlot(newPin, "decoy", resolved.masterKey);
+      await replaceProfileSlot(resolved.slot.id, { ...next, id: resolved.slot.id });
+    } finally {
+      resolved.masterKey.fill(0);
+    }
+  }, []);
+
   const lock = useCallback(async () => {
     lockStore();
-    await addLog("vault_locked", "Vault locked by user");
+    setActiveRole(null);
+    try {
+      if (getActiveProfile()) await addLog("vault_locked", "Vault locked by user");
+    } catch { /* logging must never prevent locking */ }
+    try {
+      await closeDB();
+    } catch (error) {
+      console.error("[VaultProvider] Database close error on lock", error);
+    } finally {
+      clearActiveProfile();
+      useChatStore.getState().resetChat();
+      WARNING_CLEAR_QUERY_CLIENT();
+    }
 
     // Wipe decrypted temp files from cache
     try {
-      const cachePath = dirPath(Paths.cache);
-      for (const name of fs.readdirSync(cachePath) as string[]) {
-        if (name.startsWith("temp_")) {
-          try {
-            fs.unlinkSync(`${cachePath}/${name}`);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
+      removeDecryptedTempFiles();
     } catch (e) {
       console.error("[VaultProvider] Cache cleanup error on lock", e);
+    }
+    try {
+      removeCachedPackages();
+    } catch (e) {
+      console.error("[VaultProvider] Export cache cleanup error on lock", e);
     }
   }, [lockStore]);
 
@@ -306,7 +416,8 @@ export function VaultProvider({ children }: VaultProviderProps) {
       if (!fileKeyHex) throw new Error("Failed to decrypt file key");
 
       const encryptedUri = `${dirPath(Paths.document)}/${fileRow.file_path}`;
-      const tempDecryptedUri = `${dirPath(Paths.cache)}/temp_${fileId}_${fileRow.name}`;
+      const extension = fileRow.name.match(/\.([a-z0-9]{1,10})$/i)?.[0] ?? "";
+      const tempDecryptedUri = `${dirPath(Paths.cache)}/temp_${fileId}${extension}`;
 
       await decryptFile(encryptedUri, tempDecryptedUri, fileKeyHex);
 
@@ -315,80 +426,121 @@ export function VaultProvider({ children }: VaultProviderProps) {
     [getMasterKey],
   );
 
-  const resetAllData = useCallback(async () => {
-    // 1. SecureStore
-    await clearVault();
-    // 2. SQLite tables
-    try {
-      await dropAllTables();
-    } catch (_) {}
-    // 3. MMKV stores — clear in-memory state while backing files still exist
-    WARNING_CLEAR_ALL_MMKVS_INSTANCES();
-    // 4. ALL files on disk — including mmkv backing files so corruption
-    //    cannot survive a reload. The live instances are already cleared
-    //    above, and Updates.reloadAsync() below will create fresh ones.
-    try {
-      const docPath = dirPath(Paths.document);
-      for (const name of fs.readdirSync(docPath) as string[]) {
-        try {
-          fs.rmSync(`${docPath}/${name}`, { recursive: true });
-        } catch {
-          /* ignore */
-        }
+  const deleteDecoySpace = useCallback(async (pin: string) => {
+    const current = getActiveProfile();
+    const resolved = await resolveProfile(pin);
+    if (!current || current.role !== "decoy" || resolved?.slot.id !== current.id) {
+      resolved?.masterKey.fill(0);
+      throw new Error("Incorrect PIN");
+    }
+    resolved.masterKey.fill(0);
+    const database = await getDB();
+    const files = await database.getAllAsync<{file_path:string}>("SELECT file_path FROM files");
+    await closeDB();
+    await deleteProfileDB(current.id);
+    const documentPath = dirPath(Paths.document);
+    for (const file of files) {
+      if (/^[0-9a-f-]{36}\.enc$/i.test(file.file_path)) {
+        const path = `${documentPath}/${file.file_path}`;
+        try { if (fs.existsSync(path)) fs.unlinkSync(path); } catch { /* encrypted orphan; key has been deleted */ }
       }
-    } catch (_) {}
-    // 5. Cache directory
-    try {
-      const cachePath = dirPath(Paths.cache);
-      for (const name of fs.readdirSync(cachePath) as string[]) {
-        try {
-          fs.rmSync(`${cachePath}/${name}`, { recursive: true });
-        } catch {
-          /* ignore */
-        }
-      }
-    } catch (_) {}
-    // 6. Reload the bundle — avoids any post-clear Zustand writes to MMKV
-    await Updates.reloadAsync();
-  }, []);
+    }
+    for (const name of ["xe-chat-v1", "vault_recipient_contacts_v1", "vault_recipient_private_pem", "vault_recipient_public_pem"]) {
+      try { removeProfileValue(name, current.id); } catch { /* the profile key is removed below */ }
+    }
+    await removeProfileSlot(current.id);
+    clearActiveProfile();
+    lockStore();
+    setActiveRole(null);
+    setHasDecoy(false);
+    useChatStore.getState().resetChat();
+    WARNING_CLEAR_QUERY_CLIENT();
+    try { removeDecryptedTempFiles(); } catch { /* cache is best effort after key deletion */ }
+    try { removeCachedPackages(); } catch { /* cache is best effort after key deletion */ }
+  }, [lockStore]);
 
-  const isLockedOut = useMemo(() => {
-    if (!lockedUntil) return false;
-    return lockedUntil > Date.now();
+  const resetAllData = useCallback(async (pin: string) => {
+    const current = getActiveProfile();
+    const resolved = await resolveProfile(pin);
+    if (!current || current.role !== "real" || resolved?.slot.id !== current.id) {
+      resolved?.masterKey.fill(0);
+      throw new Error("Incorrect PIN");
+    }
+    resolved.masterKey.fill(0);
+    await closeDB();
+    clearActiveProfile();
+    lockStore();
+    await clearLegacyVault();
+    await clearProfileSlots();
+    await clearLegacyRecipientIdentity();
+    WARNING_CLEAR_ALL_MMKVS_INSTANCES();
+    removeDirectoryContents(Paths.document);
+    removeDirectoryContents(Paths.cache);
+    removeCachedPackages();
+    useChatStore.getState().resetChat();
+    WARNING_CLEAR_QUERY_CLIENT();
+    setIsSetup(false);
+    setHasDecoy(false);
+    setActiveRole(null);
+    resetAttempts();
+    setFailedAttempts(0);
+    setLockedUntil(null);
+    try { await Updates.reloadAsync(); } catch { /* development clients may not support reloadAsync */ }
+  }, [lockStore]);
+
+  useEffect(() => {
+    if (!lockedUntil) return;
+    setClockNow(Date.now());
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
   }, [lockedUntil]);
+
+  const isLockedOut = !!lockedUntil && lockedUntil > clockNow;
 
   const value = useMemo<VaultContextValue>(
     () => ({
       isUnlocked,
       isSetup,
       isInitializing,
+      initializationError,
       failedAttempts,
       lockedUntil,
       isLockedOut,
       lastUnlockTime,
+      activeRole,
+      hasDecoy,
       setup,
       unlock,
+      createDecoy,
+      changeDecoyPin,
       lock,
       getMasterKey,
       addFileToAlbum,
       decryptFileToCache,
       resetAllData,
+      deleteDecoySpace,
     }),
     [
       isUnlocked,
       isSetup,
       isInitializing,
+      initializationError,
       failedAttempts,
       lockedUntil,
       isLockedOut,
       lastUnlockTime,
+      activeRole,
+      hasDecoy,
       setup,
       unlock,
+      createDecoy,
+      changeDecoyPin,
       lock,
       getMasterKey,
       addFileToAlbum,
       decryptFileToCache,
       resetAllData,
+      deleteDecoySpace,
     ],
   );
 

@@ -4,6 +4,7 @@ import {
   openSync,
   readSync,
   statSync,
+  unlinkSync,
   writeSync,
 } from "react-native-nitro-file-system";
 import {
@@ -97,6 +98,15 @@ function readChunkAtPosition(
   return Buffer.from(buf.buffer, buf.byteOffset, bytesRead);
 }
 
+function writeAll(fd: number, bytes: Uint8Array): void {
+  let offset = 0;
+  while (offset < bytes.length) {
+    const written = writeSync(fd, bytes, offset, bytes.length - offset);
+    if (written <= 0) throw new Error("Could not write encrypted file");
+    offset += written;
+  }
+}
+
 /**
  * Encrypts a binary file using AES-256-GCM with chunked I/O via FileHandle.
  * Output binary format: [IV(12)] [ciphertext(N)] [tag(16)]
@@ -107,6 +117,7 @@ export async function encryptFile(
   inputUri: string,
   outputUri: string,
   fileKeyHex: string,
+  onProgress?: (fraction: number) => void,
 ): Promise<void> {
   const key = Buffer.from(hexToBytes(fileKeyHex));
   const iv = randomBytes(12);
@@ -120,39 +131,27 @@ export async function encryptFile(
 
   const cipher = createCipheriv("aes-256-gcm", key, iv);
 
-  const outputChunks: Buffer[] = [Buffer.from(iv)];
-
-  // Read input in chunks via file descriptor
-  const fd = openSync(inputUri, constants.O_RDONLY);
+  const inputFd = openSync(inputUri, constants.O_RDONLY);
+  let outputFd: number | null = null;
   try {
+    outputFd = openSync(outputUri, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC);
+    writeAll(outputFd, new Uint8Array(iv));
     let bytesRead = 0;
     while (bytesRead < totalSize) {
       const chunkLen = Math.min(CHUNK_SIZE, totalSize - bytesRead);
-      const plainChunk = readChunkAtPosition(fd, chunkLen, bytesRead);
+      const plainChunk = readChunkAtPosition(inputFd, chunkLen, bytesRead);
+      if (plainChunk.length === 0) throw new Error("Source file ended during encryption");
       const encrypted: Buffer = cipher.update(plainChunk);
-      outputChunks.push(encrypted);
-      bytesRead += chunkLen;
+      writeAll(outputFd, encrypted);
+      bytesRead += plainChunk.length;
+      onProgress?.(bytesRead / totalSize);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
+    writeAll(outputFd, cipher.final());
+    writeAll(outputFd, cipher.getAuthTag());
   } finally {
-    closeSync(fd);
-  }
-
-  const finalBuf: Buffer = cipher.final();
-  if (finalBuf.length > 0) outputChunks.push(finalBuf);
-
-  const tag: Buffer = cipher.getAuthTag();
-  outputChunks.push(tag);
-
-  // Write output in one shot
-  const output = Buffer.concat(outputChunks);
-  const outFd = openSync(
-    outputUri,
-    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC,
-  );
-  try {
-    writeSync(outFd, new Uint8Array(output));
-  } finally {
-    closeSync(outFd);
+    closeSync(inputFd);
+    if (outputFd !== null) closeSync(outputFd);
   }
 }
 
@@ -188,30 +187,24 @@ export async function decryptFile(
     decipher.setAuthTag(tag);
 
     const ciphertextEnd = totalSize - 16;
-    const outputChunks: Buffer[] = [];
+    const outFd = openSync(outputUri, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC);
 
-    let readPos = 12;
-    while (readPos < ciphertextEnd) {
-      const chunkLen = Math.min(CHUNK_SIZE, ciphertextEnd - readPos);
-      const cipherChunk = readChunkAtPosition(fd, chunkLen, readPos);
-      const decrypted: Buffer = decipher.update(cipherChunk);
-      outputChunks.push(decrypted);
-      readPos += chunkLen;
-    }
-
-    // Verify auth tag — throws if tampered
-    decipher.final();
-
-    const output = Buffer.concat(outputChunks);
-    const outFd = openSync(
-      outputUri,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC,
-    );
     try {
-      writeSync(outFd, new Uint8Array(output));
-    } finally {
+      let readPos = 12;
+      while (readPos < ciphertextEnd) {
+        const chunkLen = Math.min(CHUNK_SIZE, ciphertextEnd - readPos);
+        const cipherChunk = readChunkAtPosition(fd, chunkLen, readPos);
+        if (cipherChunk.length === 0) throw new Error("Encrypted file ended unexpectedly");
+        writeAll(outFd, decipher.update(cipherChunk));
+        readPos += cipherChunk.length;
+      }
+      decipher.final();
+    } catch (error) {
       closeSync(outFd);
+      try { unlinkSync(outputUri); } catch { /* ignore */ }
+      throw error;
     }
+    closeSync(outFd);
   } finally {
     closeSync(fd);
   }

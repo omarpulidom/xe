@@ -48,6 +48,8 @@ import { useGlobalStore } from "@/store";
 import { useChatStore } from "@/store/chat.store";
 import { WARNING_CLEAR_QUERY_CLIENT } from "@/lib/qc";
 import { removeProfileValue } from "@/lib/vault/profileStorage";
+import { stopDownloadsBeforeLock } from "@/lib/vault/downloadStop";
+import { cleanupDownloadTemps } from "@/lib/vault/downloadQueueFiles";
 import {
   addProfileSlot,
   clearActiveProfile,
@@ -123,6 +125,7 @@ type VaultContextValue = {
     plainUri: string,
     mime: string,
     name: string,
+    onProgress?: (fraction: number) => void,
   ) => Promise<void>;
   /** Decrypts a file temporarily to CacheDirectory for viewing. Returns the URI of the decrypted file. */
   decryptFileToCache: (fileId: string) => Promise<string | null>;
@@ -162,6 +165,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
 
     const init = async () => {
       try {
+        cleanupDownloadTemps();
         const slots = await loadProfileSlots();
         if (slots.length === 0 && !(await isFreshInstallPrepared())) {
           // The user chose a clean start: discard all pre-profile app data.
@@ -321,6 +325,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
   }, []);
 
   const lock = useCallback(async () => {
+    await stopDownloadsBeforeLock();
     lockStore();
     setActiveRole(null);
     try {
@@ -354,9 +359,10 @@ export function VaultProvider({ children }: VaultProviderProps) {
   }, []);
 
   const addFileToAlbum = useCallback(
-    async (albumId: string, plainUri: string, mime: string, name: string) => {
+    async (albumId: string, plainUri: string, mime: string, name: string, onProgress?: (fraction: number) => void) => {
       const masterKey = getMasterKey();
       if (!masterKey) throw new Error("Vault is locked");
+      const profileId = getActiveProfile()?.id;
 
       const fileId = randomUUID();
       const fileKeyHex = await generateFileKey();
@@ -365,9 +371,12 @@ export function VaultProvider({ children }: VaultProviderProps) {
       const encryptedFileName = `${fileId}.enc`;
       const outputPath = `${dirPath(Paths.document)}/${encryptedFileName}`;
 
-      await encryptFile(plainUri, outputPath, fileKeyHex);
-
       try {
+        await encryptFile(plainUri, outputPath, fileKeyHex, (fraction) => {
+          if (getActiveProfile()?.id !== profileId) throw new Error("Vault was locked during import");
+          onProgress?.(fraction);
+        });
+        if (getActiveProfile()?.id !== profileId) throw new Error("Vault was locked during import");
         const size = fs.existsSync(plainUri.replace(/^file:\/\//, ""))
           ? (
               fs.statSync(plainUri.replace(/^file:\/\//, "")) as {
@@ -434,6 +443,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       throw new Error("Incorrect PIN");
     }
     resolved.masterKey.fill(0);
+    await stopDownloadsBeforeLock();
     const database = await getDB();
     const files = await database.getAllAsync<{file_path:string}>("SELECT file_path FROM files");
     await closeDB();
@@ -445,7 +455,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
         try { if (fs.existsSync(path)) fs.unlinkSync(path); } catch { /* encrypted orphan; key has been deleted */ }
       }
     }
-    for (const name of ["xe-chat-v1", "vault_recipient_contacts_v1", "vault_recipient_private_pem", "vault_recipient_public_pem"]) {
+    for (const name of ["xe-chat-v1", "vault_recipient_contacts_v1", "vault_recipient_private_pem", "vault_recipient_public_pem", "download-queue-v1"]) {
       try { removeProfileValue(name, current.id); } catch { /* the profile key is removed below */ }
     }
     await removeProfileSlot(current.id);
@@ -467,6 +477,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
       throw new Error("Incorrect PIN");
     }
     resolved.masterKey.fill(0);
+    await stopDownloadsBeforeLock();
     await closeDB();
     clearActiveProfile();
     lockStore();

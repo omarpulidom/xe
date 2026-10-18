@@ -39,6 +39,7 @@ import {
 } from "@/lib/vault";
 import { AntDesign } from "@expo/vector-icons";
 import { useVault } from "@/components/Providers/VaultProvider";
+import { useDownloads } from "@/components/Providers/DownloadProvider";
 
 const typeData = [
   {
@@ -96,6 +97,10 @@ export default function VaultTab() {
   const [selectedRecipientId, setSelectedRecipientId] = useState("");
   const [showAddRecipientModal, setShowAddRecipientModal] = useState(false);
   const [showVaultMenu, setShowVaultMenu] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState("");
+  const [downloadError, setDownloadError] = useState("");
+  const [startingDownload, setStartingDownload] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState({
     x: 0,
     y: 0,
@@ -124,6 +129,7 @@ export default function VaultTab() {
   const loadAlbumsRequestIdRef = useRef(0);
 
   const { decryptFileToCache, getMasterKey, addFileToAlbum } = useVault();
+  const { start: startDownload } = useDownloads();
 
   const { width } = useWindowDimensions();
   // px-8 = 32px each side (64 total), gap between columns = 12
@@ -268,6 +274,21 @@ export default function VaultTab() {
     setShowVaultMenu(false);
     setShowAddRecipientModal(true);
   }, []);
+
+  const handleStartDownload = useCallback(async () => {
+    setStartingDownload(true);
+    setDownloadError("");
+    try {
+      const albumId = await startDownload(downloadUrl);
+      setShowDownloadModal(false);
+      setDownloadUrl("");
+      router.push({ pathname: "/(tabs)/album", params: { albumId, albumName: "downloads" } });
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Could not start download.");
+    } finally {
+      setStartingDownload(false);
+    }
+  }, [downloadUrl, startDownload]);
 
   const handleOpenAddRecipientFromExport = useCallback(() => {
     closeAlbumActions();
@@ -1008,6 +1029,19 @@ export default function VaultTab() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
+              className="px-4 py-4 border-b border-primary-400"
+              onPress={() => {
+                setShowVaultMenu(false);
+                setDownloadError("");
+                setShowDownloadModal(true);
+              }}
+              activeOpacity={0.75}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">
+                download
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               className="px-4 py-4"
               onPress={handleOpenAddRecipient}
               activeOpacity={0.75}
@@ -1017,6 +1051,62 @@ export default function VaultTab() {
               </Text>
             </TouchableOpacity>
           </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={showDownloadModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { if (!startingDownload) setShowDownloadModal(false); }}
+      >
+        <Pressable
+          className="flex-1 items-center justify-center px-8"
+          style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
+          onPress={() => { if (!startingDownload) setShowDownloadModal(false); }}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={keyboardModalGap}
+            className="w-full items-center justify-center"
+            style={{ paddingBottom: keyboardModalGap }}
+          >
+            <Pressable
+              className="w-full max-w-sm bg-primary-500 border border-primary-400 rounded-2xl p-4 gap-4"
+              onPress={() => {}}
+            >
+              <Text className="text-secondary-400 text-lg font-fira-code">download from link</Text>
+              <TextInput keyboardAppearance="dark"
+                value={downloadUrl}
+                onChangeText={setDownloadUrl}
+                placeholder="https://page.example/video"
+                placeholderTextColor={Colors.primary[100]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                autoFocus
+                className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
+                onSubmitEditing={handleStartDownload}
+              />
+              {downloadError ? <Text className="text-red-300 text-sm font-fira-code">{downloadError}</Text> : null}
+              <View className="flex-row items-center justify-end gap-3">
+                <TouchableOpacity
+                  onPress={() => setShowDownloadModal(false)}
+                  disabled={startingDownload}
+                  className="h-12 px-4 rounded-xl bg-primary-600 items-center justify-center"
+                >
+                  <Text className="text-secondary font-fira-code">cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleStartDownload}
+                  disabled={startingDownload || !downloadUrl.trim()}
+                  className="h-12 px-4 rounded-xl bg-secondary-500 items-center justify-center"
+                >
+                  {startingDownload ? <ActivityIndicator color={Colors.primary[500]} /> : <Text className="text-primary-500 font-fira-code-semibold">download</Text>}
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
 

@@ -35,6 +35,7 @@ import {
   type AlbumWithCount,
 } from "@/lib/vault";
 import { useVault } from "@/components/Providers/VaultProvider";
+import { useDownloads } from "@/components/Providers/DownloadProvider";
 import {
   Alert,
   Modal,
@@ -267,6 +268,7 @@ export default function AlbumTab() {
   const [files, setFiles] = useState<VaultFile[]>([]);
   const [albums, setAlbums] = useState<AlbumWithCount[]>([]);
   const { addFileToAlbum, decryptFileToCache, getMasterKey } = useVault();
+  const { batches: downloadBatches, retryJob: retryDownloadJob, retryBatch: retryDownloadBatch } = useDownloads();
   const insets = useSafeAreaInsets();
 
   // Viewing state
@@ -1620,6 +1622,21 @@ export default function AlbumTab() {
     return importBatches[0] ?? null;
   }, [activeBatchId, importBatches]);
 
+  const activeDownloadBatch = albumId
+    ? downloadBatches.find((batch) => batch.albumId === albumId && (batch.status === "searching" || batch.status === "running"))
+      ?? downloadBatches.find((batch) => batch.albumId === albumId) ?? null
+    : null;
+  const downloadDone = activeDownloadBatch?.jobs.filter((job) => job.status === "done").length ?? 0;
+  const downloadErrors = activeDownloadBatch?.jobs.filter((job) => job.status === "error").length ?? 0;
+  const downloadProgressKnown = activeDownloadBatch?.jobs.every((job) => job.progress !== null) ?? false;
+  const downloadProgress = activeDownloadBatch?.jobs.length
+    ? activeDownloadBatch.jobs.reduce((sum, job) => sum + (job.progress ?? 0), 0) / activeDownloadBatch.jobs.length
+    : 0;
+
+  useEffect(() => {
+    if (albumId && downloadDone > 0) void loadFiles();
+  }, [albumId, downloadDone, loadFiles]);
+
   const activeBatchStats = useMemo(() => {
     if (!activeBatch) {
       return {
@@ -1790,7 +1807,57 @@ export default function AlbumTab() {
         }
       />
 
-      {activeBatch ? (
+      {activeDownloadBatch ? (
+        <View className="absolute left-8 right-8 bottom-36 rounded-2xl border border-primary-400 bg-primary-500/95 p-3">
+          <View className="flex-row items-center justify-between mb-2">
+            <Text className="text-secondary-400 text-sm font-fira-code">download/jobs</Text>
+          </View>
+          <Text className="text-secondary text-sm font-fira-code">
+            {activeDownloadBatch.status === "searching" ? "searching page..." : `${downloadDone}/${activeDownloadBatch.jobs.length} files${downloadErrors ? ` | errors:${downloadErrors}` : ""}`}
+          </Text>
+          {activeDownloadBatch.status === "searching" ? <ActivityIndicator color={Colors.secondary[500]} className="mt-2" /> : null}
+          {activeDownloadBatch.errorMessage ? (
+            <View className="mt-2 gap-2">
+              <Text className="text-red-300 text-xs font-fira-code">{activeDownloadBatch.errorMessage}</Text>
+              <TouchableOpacity onPress={() => retryDownloadBatch(activeDownloadBatch.id)} className="self-start px-3 py-1 rounded-lg bg-red-400">
+                <Text className="text-primary-500 text-xs font-fira-code-semibold">retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          {activeDownloadBatch.jobs.length > 0 ? (
+            <>
+              <View className="mt-2">
+                {downloadProgressKnown ? <SmoothProgressBar progress={downloadProgress} fillColor={Colors.secondary[500]} height={8} backgroundColor={Colors.primary[600]} /> : <ActivityIndicator color={Colors.secondary[500]} />}
+              </View>
+              <ScrollView className="mt-3 max-h-52" showsVerticalScrollIndicator={false}>
+                {activeDownloadBatch.jobs.map((job, index) => (
+                  <View key={job.id} className="mb-2 rounded-xl border border-primary-400 bg-primary-600/70 px-3 py-2">
+                    <View className="flex-row justify-between">
+                      <Text className="text-secondary text-xs font-fira-code" numberOfLines={1} style={{ maxWidth: width - 190 }}>
+                        {index + 1}/{activeDownloadBatch.jobs.length} {job.name}
+                      </Text>
+                      <Text className={`text-xs font-fira-code ${job.status === "error" ? "text-red-300" : "text-secondary-400"}`}>{job.status}</Text>
+                    </View>
+                    <View className="flex-row items-center justify-between mt-1">
+                      <Text className="text-primary-100 text-xs font-fira-code-light">
+                        {job.progress === null ? `${formatFileSize(job.bytesWritten)} / ?` : `${Math.round(job.progress * 100)}%`}
+                        {job.retries ? ` | retry:${job.retries}` : ""}
+                      </Text>
+                      {job.status === "error" ? (
+                        <TouchableOpacity onPress={() => retryDownloadJob(activeDownloadBatch.id, job.id)} className="px-2 py-1 rounded-lg bg-red-400">
+                          <Text className="text-primary-500 text-xs font-fira-code-semibold">retry</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                    {job.progress === null ? <ActivityIndicator color={Colors.secondary[500]} /> : <SmoothProgressBar progress={job.progress} fillColor={job.status === "error" ? "#f87171" : Colors.secondary[500]} height={6} backgroundColor={Colors.primary[500]} />}
+                    {job.errorMessage ? <Text className="text-red-300 text-xs font-fira-code-light mt-1" numberOfLines={2}>{job.errorMessage}</Text> : null}
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
+        </View>
+      ) : activeBatch ? (
         <View className="absolute left-8 right-8 bottom-36 rounded-2xl border border-primary-400 bg-primary-500/95 p-3">
           <View className="flex-row items-center justify-between mb-2">
             <Text className="text-secondary-400 text-sm font-fira-code">

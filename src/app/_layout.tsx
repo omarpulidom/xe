@@ -8,10 +8,22 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppFonts } from "@/components/fonts/fonts";
 import { AppProviders } from "@/components/Providers/AppProviders";
 import { Linking, View } from "react-native";
+import { useVault } from "@/components/Providers/VaultProvider";
+import { queueImportPath, subscribeImportPath, takeImportPath } from "@/lib/vault/pendingImport";
 
 SplashScreen.preventAutoHideAsync();
 
 function RootStack() {
+  const { isUnlocked } = useVault();
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const openPending = () => {
+      const path = takeImportPath();
+      if (path) router.push({ pathname: "/(tabs)/vault", params: { importPath: encodeURIComponent(path) } });
+    };
+    openPending();
+    return subscribeImportPath(openPending);
+  }, [isUnlocked]);
   return (
     <View className="flex-1 bg-primary">
       <Stack
@@ -25,25 +37,27 @@ function RootStack() {
 }
 
 function extractImportPathFromUrl(rawUrl: string): string | null {
-  const decodedUrl = decodeURIComponent(rawUrl);
+  let decodedUrl: string;
+  try { decodedUrl = decodeURIComponent(rawUrl); } catch { return null; }
 
   const paramMatch = decodedUrl.match(/[?&](?:url|path|importPath)=([^&]+)/i);
   if (paramMatch?.[1]) {
-    const candidate = decodeURIComponent(paramMatch[1]);
-    if (/\.calcx([?#].*)?$/i.test(candidate)) {
+    let candidate: string;
+    try { candidate = decodeURIComponent(paramMatch[1]); } catch { return null; }
+    if (/\.xe([?#].*)?$/i.test(candidate)) {
       return candidate;
     }
   }
 
   if (
     decodedUrl.startsWith("file://") &&
-    /\.calcx([?#].*)?$/i.test(decodedUrl)
+    /\.xe([?#].*)?$/i.test(decodedUrl)
   ) {
     return decodedUrl;
   }
 
   const embeddedMatch = decodedUrl.match(
-    /file:\/\/[^\s]+?\.calcx(?:[?#][^\s]*)?/i,
+    /file:\/\/[^\s]+?\.xe(?:[?#][^\s]*)?/i,
   );
   if (embeddedMatch?.[0]) {
     return embeddedMatch[0];
@@ -76,12 +90,7 @@ export default function RootLayout() {
       }
 
       lastHandledImport.current = importPath;
-      router.push({
-        pathname: "/(tabs)/vault",
-        params: {
-          importPath: encodeURIComponent(importPath),
-        },
-      });
+      queueImportPath(importPath);
     };
 
     Linking.getInitialURL()

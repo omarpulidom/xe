@@ -1,4 +1,4 @@
-# UMBRA — Plan de Producto y Arquitectura
+# XE — Plan de Producto y Arquitectura
 
 App de privacidad para ti y tus amigos. Estética terminal (Fira Code, fondos oscuros, prompts `>`). No se distribuye en tiendas — side-loading por APK firmado entre ustedes, TestFlight en iOS.
 
@@ -10,7 +10,7 @@ App de privacidad para ti y tus amigos. Estética terminal (Fira Code, fondos os
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                    UMBRA CLIENT (RN)                       │
+│                    XE CLIENT (RN)                          │
 ├──────────────────────────────────────────────────────────┤
 │  [Vault]        [Chat]         [Pairing]   [Settings]    │
 │  ✅ hecho        🔨 construir   🔨 const    ✅ existe      │
@@ -22,7 +22,7 @@ App de privacidad para ti y tus amigos. Estética terminal (Fira Code, fondos os
                        │ wss://  (mensajes cifrados opacos)
                        ▼
         ┌──────────────────────────────┐
-        │   UMBRA RELAY (Go binary)    │
+        │   XE RELAY (Go binary)       │
         │   VPS Hetzner/Contabo        │
         │   - Forward ciego            │
         │   - TTL 7d automático        │
@@ -51,7 +51,7 @@ App de privacidad para ti y tus amigos. Estética terminal (Fira Code, fondos os
 1. Alice pulsa `/pair` → elige método (acoustic o light).
 2. Bob también pulsa `/pair` → modo receptor.
 3. Se intercambian: `pubkey_alice`, `pubkey_bob`, nonces.
-4. Cada uno deriva un canal: `HMAC-SHA256(DH(sk_alice, pk_bob), "umbra-v1")`.
+4. Cada uno deriva un canal: `HMAC-SHA256(DH(sk_alice, pk_bob), "xe-v1")`.
 5. Se guarda el contacto con alias + fingerprint.
 
 ---
@@ -156,7 +156,7 @@ UI actual ya tiene:
 - **Typewriter** en cada mensaje al aparecer — `withDelay` por carácter, ~15ms/char.
 - **Boot screen** al abrir el chat — simulación de arranque:
   ```
-  > initializing umbra v0.1.0...
+  > initializing xe v0.1.0...
   > establishing secure channel...
   > verifying keys.................[OK]
   > loading session................[OK]
@@ -191,7 +191,7 @@ WS   /v1/signal     → WebRTC signaling (también opaco)
 
 - Contenedor Docker en Hetzner CX22 (~$4/mes).
 - TLS con Caddy automático.
-- Dominio propio (ej. `relay.umbra.xyz`), pago con crypto.
+- Dominio propio para el relay, pago con crypto.
 
 ---
 

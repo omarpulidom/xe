@@ -394,7 +394,7 @@ export default function VaultTab() {
       await Share.share({
         url: packageUri,
         title: "Encrypted album export",
-        message: "Calc encrypted album export package",
+        message: "Xe encrypted album export package",
       });
     } catch (err) {
       console.error("[VaultTab] encrypted album export error:", err);
@@ -425,7 +425,7 @@ export default function VaultTab() {
 
   const openImportFromPath = useCallback(async (rawPath: string) => {
     const pickedPath = decodeURIComponent(rawPath).replace(/^file:\/\//, "");
-    if (!/\.calcx$/i.test(pickedPath)) {
+    if (!/\.xe$/i.test(pickedPath)) {
       throw new Error("Unsupported package extension");
     }
 
@@ -464,7 +464,7 @@ export default function VaultTab() {
       console.error("[VaultTab] pick import package error:", err);
       const message = err instanceof Error ? err.message : "";
       if (message.toLowerCase().includes("extension")) {
-        Alert.alert("Import", "Please select a .calcx package.");
+        Alert.alert("Import", "Please select a .xe package.");
       } else {
         Alert.alert("Import", "Could not read package.");
       }
@@ -588,7 +588,7 @@ export default function VaultTab() {
           <Text className="text-secondary-600 text-xl font-fira-code">
             <Text className="text-primary-100">{">"}</Text> md
           </Text>
-          <TextInput
+          <TextInput keyboardAppearance="dark"
             value={newAlbumName}
             onChangeText={setNewAlbumName}
             placeholder="album_name"
@@ -828,7 +828,7 @@ export default function VaultTab() {
                         placeholder="recipient"
                         className="w-full"
                       />
-                      <TextInput
+                      <TextInput keyboardAppearance="dark"
                         value={exportPassphrase}
                         onChangeText={setExportPassphrase}
                         placeholder="passphrase"
@@ -837,7 +837,7 @@ export default function VaultTab() {
                         autoFocus
                         className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
                       />
-                      <TextInput
+                      <TextInput keyboardAppearance="dark"
                         value={exportPassphraseConfirm}
                         onChangeText={setExportPassphraseConfirm}
                         placeholder="confirm passphrase"
@@ -923,7 +923,7 @@ export default function VaultTab() {
               />
 
               {importNeedsPassphrase && (
-                <TextInput
+                <TextInput keyboardAppearance="dark"
                   value={importPassphrase}
                   onChangeText={setImportPassphrase}
                   placeholder="passphrase"
@@ -1058,14 +1058,14 @@ export default function VaultTab() {
                 </Text>
               </View>
 
-              <TextInput
+              <TextInput keyboardAppearance="dark"
                 value={newRecipientName}
                 onChangeText={setNewRecipientName}
                 placeholder="recipient name"
                 placeholderTextColor={Colors.primary[100]}
                 className="h-12 px-4 border border-primary-300 rounded-2xl text-secondary font-fira-code text-lg"
               />
-              <TextInput
+              <TextInput keyboardAppearance="dark"
                 value={newRecipientPublicKey}
                 onChangeText={setNewRecipientPublicKey}
                 placeholder="recipient public key (PEM)"

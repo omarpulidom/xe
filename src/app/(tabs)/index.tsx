@@ -90,7 +90,7 @@ export default function HomeTab() {
     if (!localRecipientIdentity) return;
 
     await Share.share({
-      title: "My Calc public key",
+      title: "My Xe public key",
       message: localRecipientIdentity.publicKeyPem,
     });
   }, [localRecipientIdentity]);
@@ -105,7 +105,7 @@ export default function HomeTab() {
     };
 
     await Share.share({
-      title: "My Calc recipient info",
+      title: "My Xe recipient info",
       message: JSON.stringify(payload, null, 2),
     });
   }, [localRecipientIdentity]);
@@ -142,7 +142,7 @@ export default function HomeTab() {
               <Text className="ml-4 mr-2 text-secondary-500 text-xl font-fira-code">
                 status:
               </Text>
-              <Text className="text-secondary shadow shadow-white/60 text-2xl font-geist-mono mr-2">
+              <Text className="text-secondary shadow shadow-white/60 text-xl font-geist-mono mr-2">
                 SECURE
               </Text>
               <AntDesign

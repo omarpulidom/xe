@@ -18,7 +18,7 @@ import {
   unwrapDerivedKeyWithLocalIdentity,
 } from "./recipientAuth";
 
-const EXPORT_FORMAT = "calc-vault-export";
+const EXPORT_FORMAT = "xe-vault-export";
 const EXPORT_VERSION = 1;
 const KDF_ITERATIONS = 310_000;
 
@@ -111,15 +111,11 @@ function dirPath(dir: { uri: string }): string {
     : dir.uri.replace(/\/$/, "");
 }
 
-function sanitizeName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80) || "file";
-}
-
 async function writePackageToCache(
   fileName: string,
   data: ExportPackage,
 ): Promise<string> {
-  const outputPath = `${getTempPath()}/${fileName}`;
+  const outputPath = `${getTempPath()}/xe_export_${fileName}`;
   fs.writeFileSync(outputPath, JSON.stringify(data), "utf8");
   return ensureFileUri(outputPath);
 }
@@ -156,7 +152,7 @@ export async function createPlainExportFilePackage(input: {
     },
   };
 
-  const outName = `${sanitizeName(input.file.name)}_${Date.now()}.calcx`;
+  const outName = `${randomUUID()}.xe`;
   return await writePackageToCache(outName, pkg);
 }
 
@@ -232,11 +228,11 @@ export async function createEncryptedExportFilePackage(input: {
       },
       wrapped_file_key: wrappedFileKey,
       authorization,
-      note: "Decrypt this package only inside Calc app.",
+      note: "Decrypt this package only inside Xe app.",
     },
   };
 
-  const outName = `${sanitizeName(input.file.name)}_${Date.now()}.calcx`;
+  const outName = `${randomUUID()}.xe`;
   return await writePackageToCache(outName, pkg);
 }
 
@@ -285,7 +281,7 @@ export async function createPlainExportAlbumPackage(input: {
     files: fileEntries,
   };
 
-  const outName = `${sanitizeName(input.albumName)}_${Date.now()}.calcx`;
+  const outName = `${randomUUID()}.xe`;
   return await writePackageToCache(outName, pkg);
 }
 
@@ -370,11 +366,11 @@ export async function createEncryptedExportAlbumPackage(input: {
         salt,
       },
       authorization,
-      note: "Decrypt this package only inside Calc app.",
+      note: "Decrypt this package only inside Xe app.",
     },
   };
 
-  const outName = `${sanitizeName(input.albumName)}_${Date.now()}.calcx`;
+  const outName = `${randomUUID()}.xe`;
   return await writePackageToCache(outName, pkg);
 }
 

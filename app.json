@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "Calc",
-    "slug": "calc",
+    "name": "Xe",
+    "slug": "xe",
     "version": "0.0.1",
-    "scheme": "com.pm.calc",
+    "scheme": "com.pm.xe",
     "platforms": ["ios", "android"],
     "plugins": [
       "expo-dev-client",
@@ -33,7 +33,7 @@
     },
     "orientation": "portrait",
     "icon": "./src/assets/appIcons/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./src/assets/appIcons/splash.png",
       "resizeMode": "contain",
@@ -42,24 +42,24 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pm.calc",
+      "bundleIdentifier": "com.pm.xe",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleDocumentTypes": [
           {
-            "CFBundleTypeName": "Calc Export Package",
+            "CFBundleTypeName": "Xe Export Package",
             "CFBundleTypeRole": "Editor",
-            "LSItemContentTypes": ["com.pm.calc.calcx"]
+            "LSItemContentTypes": ["com.pm.xe.package"]
           }
         ],
         "UTExportedTypeDeclarations": [
           {
-            "UTTypeIdentifier": "com.pm.calc.calcx",
-            "UTTypeDescription": "Calc Export Package",
+            "UTTypeIdentifier": "com.pm.xe.package",
+            "UTTypeDescription": "Xe Export Package",
             "UTTypeConformsTo": ["public.data"],
             "UTTypeTagSpecification": {
-              "public.filename-extension": ["calcx"],
-              "public.mime-type": "application/x-calcx"
+              "public.filename-extension": ["xe"],
+              "public.mime-type": "application/x-xe-package"
             }
           }
         ]
@@ -68,11 +68,12 @@
       "appleTeamId": "C5TXZNQR66"
     },
     "android": {
+      "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/appIcons/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.pm.calc",
+      "package": "com.pm.xe",
       "versionCode": 1,
       "intentFilters": [
         {
@@ -80,11 +81,11 @@
           "autoVerify": false,
           "data": [
             {
-              "mimeType": "application/x-calcx"
+              "mimeType": "application/x-xe-package"
             },
             {
               "mimeType": "application/octet-stream",
-              "pathPattern": ".*\\.calcx"
+              "pathPattern": ".*\\.xe"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]

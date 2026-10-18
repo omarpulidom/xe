@@ -1004,7 +1004,7 @@ export default function AlbumTab() {
     Alert.alert("Add files", "What do you want to import?", [
       { text: "Photos & Videos", onPress: handleAddMedia },
       { text: "Documents", onPress: handleAddDocuments },
-      { text: "Calc Package (.calcx)", onPress: handleImportPackage },
+      { text: "Xe Package (.xe)", onPress: handleImportPackage },
       { text: "Cancel", style: "cancel" },
     ]);
   }, [handleAddMedia, handleAddDocuments, handleImportPackage]);
@@ -1359,7 +1359,7 @@ export default function AlbumTab() {
       await Share.share({
         url: packageUri,
         title: "Encrypted album export",
-        message: "Calc encrypted album export package",
+        message: "Xe encrypted album export package",
       });
     } catch (err) {
       console.error("[AlbumTab] encrypted album export error:", err);
@@ -1483,7 +1483,7 @@ export default function AlbumTab() {
       await Share.share({
         url: packageUri,
         title: "Encrypted export",
-        message: "Calc encrypted export package",
+        message: "Xe encrypted export package",
       });
     } catch (err) {
       console.error("[AlbumTab] encrypted export error:", err);
@@ -2028,7 +2028,7 @@ export default function AlbumTab() {
                   <Text className="text-secondary-400 text-lg font-fira-code">
                     rename album
                   </Text>
-                  <TextInput
+                  <TextInput keyboardAppearance="dark"
                     value={albumRenameValue}
                     onChangeText={setAlbumRenameValue}
                     placeholder="album_name"
@@ -2172,7 +2172,7 @@ export default function AlbumTab() {
                         placeholder="recipient"
                         className="w-full"
                       />
-                      <TextInput
+                      <TextInput keyboardAppearance="dark"
                         value={albumExportPassphrase}
                         onChangeText={setAlbumExportPassphrase}
                         placeholder="passphrase"
@@ -2181,7 +2181,7 @@ export default function AlbumTab() {
                         autoFocus
                         className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
                       />
-                      <TextInput
+                      <TextInput keyboardAppearance="dark"
                         value={albumExportPassphraseConfirm}
                         onChangeText={setAlbumExportPassphraseConfirm}
                         placeholder="confirm passphrase"
@@ -2339,7 +2339,7 @@ export default function AlbumTab() {
                   <Text className="text-secondary-400 text-lg font-fira-code">
                     rename file
                   </Text>
-                  <TextInput
+                  <TextInput keyboardAppearance="dark"
                     value={renameValue}
                     onChangeText={setRenameValue}
                     placeholder="file_name"
@@ -2516,7 +2516,7 @@ export default function AlbumTab() {
                         placeholder="recipient"
                         className="w-full"
                       />
-                      <TextInput
+                      <TextInput keyboardAppearance="dark"
                         value={exportPassphrase}
                         onChangeText={setExportPassphrase}
                         placeholder="passphrase"
@@ -2525,7 +2525,7 @@ export default function AlbumTab() {
                         autoFocus
                         className="h-12 px-4 border border-primary-400 rounded-2xl text-secondary font-fira-code text-lg"
                       />
-                      <TextInput
+                      <TextInput keyboardAppearance="dark"
                         value={exportPassphraseConfirm}
                         onChangeText={setExportPassphraseConfirm}
                         placeholder="confirm passphrase"
@@ -2598,7 +2598,7 @@ export default function AlbumTab() {
                     : `File package: ${pendingImportName}`
                   : "Enter passphrase to import this package."}
               </Text>
-              <TextInput
+              <TextInput keyboardAppearance="dark"
                 value={importPassphrase}
                 onChangeText={setImportPassphrase}
                 placeholder="passphrase"

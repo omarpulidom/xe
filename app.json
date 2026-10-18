@@ -18,9 +18,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#f5f5f5",
+          "backgroundColor": "#161616",
           "image": "./src/assets/appIcons/adaptive-icon.png",
-          "imageWidth": 150
+          "imageWidth": 100
         }
       ],
       ["expo-sqlite", { "useSQLCipher": true }],
@@ -34,11 +34,6 @@
     "orientation": "portrait",
     "icon": "./src/assets/appIcons/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./src/assets/appIcons/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,

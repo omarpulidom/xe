@@ -264,9 +264,31 @@ export default function AlbumTab() {
   );
 
   const [typeValue, setTypeValue] = useState<string | null>(null);
-  const [sortValue, setSortValue] = useState<string | null>(null);
+  const [sortValue, setSortValue] = useState<string | null>("name");
   const [files, setFiles] = useState<VaultFile[]>([]);
   const [albums, setAlbums] = useState<AlbumWithCount[]>([]);
+  const filteredFiles = useMemo(() => {
+    let result = [...files];
+
+    if (typeValue && typeValue !== "all") {
+      result = result.filter((file) => {
+        if (typeValue === "img") return file.mime.startsWith("image/");
+        if (typeValue === "vid") return file.mime.startsWith("video/");
+        if (typeValue === "doc")
+          return !file.mime.startsWith("image/") && !file.mime.startsWith("video/");
+        return true;
+      });
+    }
+
+    const sort = sortValue ?? "name";
+    result.sort((a, b) => {
+      if (sort === "size") return b.size - a.size;
+      if (sort === "date") return b.created_at - a.created_at;
+      return a.name.localeCompare(b.name);
+    });
+
+    return result;
+  }, [files, typeValue, sortValue]);
   const { addFileToAlbum, decryptFileToCache, getMasterKey } = useVault();
   const { batches: downloadBatches, retryJob: retryDownloadJob, retryBatch: retryDownloadBatch } = useDownloads();
   const insets = useSafeAreaInsets();
@@ -1013,15 +1035,15 @@ export default function AlbumTab() {
 
   const handleViewFile = useCallback(
     (file: VaultFile) => {
-      const sourceFiles = files.length > 0 ? files : [file];
-      const startIndex = sourceFiles.findIndex((f) => f.id === file.id);
+      const visibleIndex = filteredFiles.findIndex((item) => item.id === file.id);
+      const sourceFiles = visibleIndex >= 0 ? filteredFiles : [file];
       setViewerFiles(sourceFiles);
-      setViewerIndex(startIndex >= 0 ? startIndex : 0);
+      setViewerIndex(Math.max(0, visibleIndex));
       setShowViewerChrome(true);
       viewerTranslateY.setValue(0);
       setIsViewerOpen(true);
     },
-    [files, viewerTranslateY],
+    [filteredFiles, viewerTranslateY],
   );
 
   const handleCloseView = useCallback(async () => {
@@ -1583,31 +1605,6 @@ export default function AlbumTab() {
     file.mime.startsWith("video/"),
   ).length;
   const albumDocCount = albumFileCount - albumImageCount - albumVideoCount;
-
-  const filteredFiles = useMemo(() => {
-    let result = [...files];
-
-    // Type filter
-    if (typeValue && typeValue !== "all") {
-      result = result.filter((f) => {
-        if (typeValue === "img") return f.mime.startsWith("image/");
-        if (typeValue === "vid") return f.mime.startsWith("video/");
-        if (typeValue === "doc")
-          return !f.mime.startsWith("image/") && !f.mime.startsWith("video/");
-        return true;
-      });
-    }
-
-    // Sort
-    const sort = sortValue ?? "date";
-    result.sort((a, b) => {
-      if (sort === "name") return a.name.localeCompare(b.name);
-      if (sort === "size") return b.size - a.size;
-      return b.created_at - a.created_at; // date (default)
-    });
-
-    return result;
-  }, [files, typeValue, sortValue]);
 
   const activeBatch = useMemo(() => {
     const selected = importBatches.find((batch) => batch.id === activeBatchId);

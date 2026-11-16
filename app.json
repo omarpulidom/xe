@@ -4,7 +4,10 @@
     "slug": "xe",
     "version": "0.0.1",
     "scheme": "com.pm.xe",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "plugins": [
       "expo-dev-client",
       "expo-router",
@@ -12,7 +15,9 @@
       [
         "expo-asset",
         {
-          "assets": ["./src/assets/images"]
+          "assets": [
+            "./src/assets/images"
+          ]
         }
       ],
       [
@@ -23,7 +28,12 @@
           "imageWidth": 100
         }
       ],
-      ["expo-sqlite", { "useSQLCipher": true }],
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
       "expo-secure-store",
       "expo-video"
     ],
@@ -34,7 +44,9 @@
     "orientation": "portrait",
     "icon": "./src/assets/appIcons/icon.png",
     "userInterfaceStyle": "dark",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pm.xe",
@@ -44,16 +56,22 @@
           {
             "CFBundleTypeName": "Xe Export Package",
             "CFBundleTypeRole": "Editor",
-            "LSItemContentTypes": ["com.pm.xe.package"]
+            "LSItemContentTypes": [
+              "com.pm.xe.package"
+            ]
           }
         ],
         "UTExportedTypeDeclarations": [
           {
             "UTTypeIdentifier": "com.pm.xe.package",
             "UTTypeDescription": "Xe Export Package",
-            "UTTypeConformsTo": ["public.data"],
+            "UTTypeConformsTo": [
+              "public.data"
+            ],
             "UTTypeTagSpecification": {
-              "public.filename-extension": ["xe"],
+              "public.filename-extension": [
+                "xe"
+              ],
               "public.mime-type": "application/x-xe-package"
             }
           }
@@ -83,13 +101,19 @@
               "pathPattern": ".*\\.xe"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
     "extra": {
       "router": {
         "origin": false
+      },
+      "eas": {
+        "projectId": "dec2d1ca-48a7-4b58-8317-d59228be5620"
       }
     },
     "owner": "omarf045"

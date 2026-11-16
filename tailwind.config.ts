@@ -1,72 +1,37 @@
-import type { Config } from 'tailwindcss'
-import { Colors } from './src/components/colors'
-import { AppFontNames } from './src/components/fonts/font-names'
+import type { Config } from "tailwindcss";
+import { Colors } from "./src/components/colors";
+import { AppFontNames } from "./src/components/fonts/font-names";
 
 const config: Config = {
-  content: [
-    './src/app/**/*.{js,ts,tsx}',
-    './src/components/**/*.{js,ts,tsx}',
-  ],
+  content: ["./src/app/**/*.{js,ts,tsx}", "./src/components/**/*.{js,ts,tsx}"],
 
-  presets: [
-    require('nativewind/preset'),
-  ],
+  presets: [require("nativewind/preset")],
   theme: {
     extend: {
       colors: Colors,
       fontFamily: {
-        montserrat: [
-          AppFontNames.Montserrat_500Medium,
-        ],
-        'montserrat-thin': [
-          AppFontNames.Montserrat_100Thin,
-        ],
-        'montserrat-extralight': [
-          AppFontNames.Montserrat_200ExtraLight,
-        ],
-        'montserrat-light': [
-          AppFontNames.Montserrat_300Light,
-        ],
-        'montserrat-regular': [
-          AppFontNames.Montserrat_400Regular,
-        ],
-        'montserrat-medium': [
-          AppFontNames.Montserrat_500Medium,
-        ],
-        'montserrat-semibold': [
-          AppFontNames.Montserrat_600SemiBold,
-        ],
-        'montserrat-bold': [
-          AppFontNames.Montserrat_700Bold,
-        ],
-        'montserrat-extrabold': [
-          AppFontNames.Montserrat_800ExtraBold,
-        ],
-        'montserrat-black': [
-          AppFontNames.Montserrat_900Black,
-        ],
+        "fira-code": [AppFontNames.FiraCode_400Regular],
+        "fira-code-light": [AppFontNames.FiraCode_300Light],
+        "fira-code-regular": [AppFontNames.FiraCode_400Regular],
+        "fira-code-medium": [AppFontNames.FiraCode_500Medium],
+        "fira-code-semibold": [AppFontNames.FiraCode_600SemiBold],
+        "fira-code-bold": [AppFontNames.FiraCode_700Bold],
 
-        sans: [
-          AppFontNames.Montserrat_500Medium,
-          'sans-serif',
-        ],
-        mono: [
-          AppFontNames.Montserrat_500Medium,
-          'monospace',
-        ],
-        primary: [
-          AppFontNames.Montserrat_500Medium,
-          'sans-serif',
-        ],
-        secondary: [
-          AppFontNames.Montserrat_500Medium,
-          'sans-serif',
-        ],
+        "geist-mono": [AppFontNames.GeistMono_400Regular],
+        "geist-mono-thin": [AppFontNames.GeistMono_100Thin],
+        "geist-mono-extralight": [AppFontNames.GeistMono_200ExtraLight],
+        "geist-mono-light": [AppFontNames.GeistMono_300Light],
+        "geist-mono-regular": [AppFontNames.GeistMono_400Regular],
+        "geist-mono-medium": [AppFontNames.GeistMono_500Medium],
+        "geist-mono-semibold": [AppFontNames.GeistMono_600SemiBold],
+        "geist-mono-bold": [AppFontNames.GeistMono_700Bold],
+        "geist-mono-extrabold": [AppFontNames.GeistMono_800ExtraBold],
+        "geist-mono-black": [AppFontNames.GeistMono_900Black],
       },
     },
   },
 
   plugins: [],
-}
+};
 
-export default config
+export default config;

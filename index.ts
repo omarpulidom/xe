@@ -1,4 +1,4 @@
-import '@/lib/polyfills/AbortController.polyfill'
-import '@/lib/polyfills/Dates.polyfill'
+import "@/lib/polyfills/AbortController.polyfill";
+import "@/lib/polyfills/Dates.polyfill";
 
-import 'expo-router/entry'
+import "expo-router/entry";

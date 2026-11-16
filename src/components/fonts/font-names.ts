@@ -1,24 +1,21 @@
-import type { AppFontKeys } from './fonts'
+import type { AppFontKeys } from "./fonts";
 
 export const AppFontNames = {
-  Montserrat_100Thin: 'Montserrat_100Thin',
-  Montserrat_100Thin_Italic: 'Montserrat_100Thin_Italic',
-  Montserrat_200ExtraLight: 'Montserrat_200ExtraLight',
-  Montserrat_200ExtraLight_Italic: 'Montserrat_200ExtraLight_Italic',
-  Montserrat_300Light: 'Montserrat_300Light',
-  Montserrat_300Light_Italic: 'Montserrat_300Light_Italic',
-  Montserrat_400Regular: 'Montserrat_400Regular',
-  Montserrat_400Regular_Italic: 'Montserrat_400Regular_Italic',
-  Montserrat_500Medium: 'Montserrat_500Medium',
-  Montserrat_500Medium_Italic: 'Montserrat_500Medium_Italic',
-  Montserrat_600SemiBold: 'Montserrat_600SemiBold',
-  Montserrat_600SemiBold_Italic: 'Montserrat_600SemiBold_Italic',
-  Montserrat_700Bold: 'Montserrat_700Bold',
-  Montserrat_700Bold_Italic: 'Montserrat_700Bold_Italic',
-  Montserrat_800ExtraBold: 'Montserrat_800ExtraBold',
-  Montserrat_800ExtraBold_Italic: 'Montserrat_800ExtraBold_Italic',
-  Montserrat_900Black: 'Montserrat_900Black',
-  Montserrat_900Black_Italic: 'Montserrat_900Black_Italic',
+  FiraCode_300Light: "FiraCode_300Light",
+  FiraCode_400Regular: "FiraCode_400Regular",
+  FiraCode_500Medium: "FiraCode_500Medium",
+  FiraCode_600SemiBold: "FiraCode_600SemiBold",
+  FiraCode_700Bold: "FiraCode_700Bold",
+
+  GeistMono_100Thin: "GeistMono_100Thin",
+  GeistMono_200ExtraLight: "GeistMono_200ExtraLight",
+  GeistMono_300Light: "GeistMono_300Light",
+  GeistMono_400Regular: "GeistMono_400Regular",
+  GeistMono_500Medium: "GeistMono_500Medium",
+  GeistMono_600SemiBold: "GeistMono_600SemiBold",
+  GeistMono_700Bold: "GeistMono_700Bold",
+  GeistMono_800ExtraBold: "GeistMono_800ExtraBold",
+  GeistMono_900Black: "GeistMono_900Black",
 } as const satisfies {
-  [key in AppFontKeys]: AppFontKeys
-}
+  [key in AppFontKeys]: AppFontKeys;
+};

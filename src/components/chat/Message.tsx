@@ -1,0 +1,253 @@
+import { useEffect, useRef, useState } from "react";
+import Animated, {
+  Easing,
+  SlideInLeft,
+  SlideInRight,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
+import { Pressable, Text, Vibration, View } from "react-native";
+import { formatTime } from "@/lib/chat/format";
+import { parseCommand } from "@/lib/chat/commands";
+import { useChatStore } from "@/store/chat.store";
+import type { Message as ChatMessage, MessageVariant } from "@/lib/chat/types";
+import { TypewriterText } from "./TypewriterText";
+import { GlitchText } from "./GlitchText";
+import { BurnRing } from "./BurnRing";
+
+type Props = {
+  message: ChatMessage;
+  variant: MessageVariant;
+  authorAlias: string;
+  animate: boolean;
+  onLongPress?: (message: ChatMessage) => void;
+  onReplyQuotePress?: (messageId: string) => void;
+  isHighlighted?: boolean;
+};
+
+const GLITCH_DURATION_MS = 420;
+
+export function Message({
+  message,
+  variant,
+  authorAlias,
+  animate,
+  onLongPress,
+  onReplyQuotePress,
+  isHighlighted = false,
+}: Props) {
+  const [isGlitching, setIsGlitching] = useState(false);
+  const prevStatus = useRef(message.status);
+  const processedRef = useRef(false);
+  const hasEnteredRef = useRef(false);
+  const removeMessage = useChatStore((s) => s.removeMessage);
+
+  useEffect(() => {
+    if (processedRef.current) {
+      prevStatus.current = message.status;
+      return;
+    }
+
+    const wasActive =
+      prevStatus.current === "read" || prevStatus.current === "delivered" || prevStatus.current === "sent";
+    const nowDestroyed =
+      message.status === "burned" || message.status === "expired";
+
+    if (wasActive && nowDestroyed && !isGlitching) {
+      setIsGlitching(true);
+      processedRef.current = true;
+    } else if (!wasActive && nowDestroyed) {
+      removeMessage(message.threadId, message.id);
+      processedRef.current = true;
+    }
+
+    prevStatus.current = message.status;
+  }, [message.status, message.id, message.threadId, isGlitching, removeMessage]);
+
+  useEffect(() => {
+    if (!isGlitching) return;
+    const timer = setTimeout(() => {
+      removeMessage(message.threadId, message.id);
+    }, GLITCH_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [isGlitching, removeMessage, message.threadId, message.id]);
+
+  const highlight = useSharedValue(0);
+  useEffect(() => {
+    if (isHighlighted) {
+      highlight.value = withSequence(
+        withTiming(1, { duration: 150, easing: Easing.out(Easing.ease) }),
+        withTiming(0, {
+          duration: 1000,
+          easing: Easing.out(Easing.ease),
+        }),
+      );
+    }
+  }, [isHighlighted, highlight]);
+
+  const highlightStyle = useAnimatedStyle(() => ({
+    opacity: highlight.value,
+  }));
+
+  const isDestroyed =
+    message.status === "burned" || message.status === "expired";
+
+  if (isDestroyed && !isGlitching) {
+    return null;
+  }
+
+  if (variant === "system") {
+    return (
+      <View className="items-center my-1">
+        <Text className="text-primary-100 text-lg font-fira-code">
+          {message.text}
+        </Text>
+      </View>
+    );
+  }
+
+  const parsed = message.text ? parseCommand(message.text) : null;
+  const body = parsed?.body ?? "";
+  const originalText = body || message.text || "";
+
+  const isMine = variant === "mine";
+  const entering =
+    animate && !hasEnteredRef.current
+      ? (() => {
+          hasEnteredRef.current = true;
+          return isMine
+            ? SlideInRight.duration(180)
+            : SlideInLeft.duration(180);
+        })()
+      : undefined;
+
+  const textColor = isMine ? "text-secondary" : "text-secondary-200";
+
+  const totalMs = message.burnOnRead
+    ? (message.burnDurationSec ?? 5) * 1000
+    : message.expiresAt
+      ? Math.max(0, message.expiresAt - message.createdAt)
+      : 0;
+
+  const showBurnRing = totalMs > 0 && !isDestroyed;
+
+  const isCanaryOpened =
+    message.isCanary &&
+    (message.status === "read" ||
+      message.status === "burned" ||
+      message.status === "expired");
+  const canaryDotColor = isCanaryOpened ? "#3bff7d" : "#f5ac58";
+
+  const handleLongPress = () => {
+    if (!onLongPress) return;
+    Vibration.vibrate([0, 15, 30, 15]);
+    onLongPress(message);
+  };
+
+  const handleQuotePress = () => {
+    if (!onReplyQuotePress || !message.replyTo) return;
+    onReplyQuotePress(message.replyTo.id);
+  };
+
+  return (
+    <Pressable
+      onLongPress={handleLongPress}
+      delayLongPress={350}
+      disabled={!onLongPress}
+      className="mb-1.5"
+    >
+      <Animated.View entering={entering}>
+        <Animated.View
+          pointerEvents="none"
+          className="absolute inset-0 rounded"
+          style={[
+            { backgroundColor: "rgba(240, 240, 240, 0.18)" },
+            highlightStyle,
+          ]}
+        />
+        {showBurnRing && !isGlitching && (
+          <View className="mb-0.5">
+            <BurnRing
+              createdAt={message.createdAt}
+              totalMs={totalMs}
+              label={message.burnOnRead ? "burn" : "ttl"}
+            />
+          </View>
+        )}
+        {message.replyTo && !isGlitching && (
+          <Pressable
+            onPress={handleQuotePress}
+            hitSlop={6}
+            disabled={!onReplyQuotePress || isGlitching}
+            className="flex-row items-stretch mb-1 ml-1 active:opacity-60"
+          >
+            <View
+              className="w-[2px] mr-2 rounded-sm"
+              style={{ backgroundColor: "#f0f0f0" }}
+            />
+            <View className="flex-1 pb-0.5">
+              <Text
+                className="text-sm font-fira-code"
+                style={{ color: "#f0f0f0" }}
+              >
+                @{message.replyTo.authorAlias}
+              </Text>
+              <Text
+                className="text-base text-primary-100 font-fira-code-light"
+                numberOfLines={2}
+              >
+                {message.replyTo.text || "(empty)"}
+              </Text>
+            </View>
+          </Pressable>
+        )}
+        {isGlitching ? (
+          <View className="flex-row items-start gap-1">
+            <Text className="text-primary-100 text-base font-fira-code tabular-nums mt-0.5">
+              {formatTime(message.createdAt)}
+            </Text>
+            <Text className="text-secondary-600 text-base font-fira-code mt-0.5">
+              {"<"}
+              <Text className="text-secondary">@</Text>
+              {authorAlias}
+              {">"}
+            </Text>
+            <GlitchText
+              text={originalText}
+              active={isGlitching}
+              className={`text-lg font-fira-code-light ${textColor} flex-1`}
+            />
+          </View>
+        ) : (
+          <Text className={`text-lg font-fira-code-light ${textColor}`}>
+            <Text className="text-primary-100 text-base font-fira-code tabular-nums">
+              {formatTime(message.createdAt)}
+            </Text>
+            {" "}
+            <Text className="text-secondary-600 text-base font-fira-code">
+              {"<"}
+              <Text className="text-secondary">@</Text>
+              {authorAlias}
+              {">"}
+            </Text>
+            {" "}
+            {animate ? (
+              <TypewriterText
+                text={originalText}
+                enabled={animate}
+                className="text-lg font-fira-code-light"
+              />
+            ) : (
+              originalText
+            )}
+            {message.isCanary && !isDestroyed && (
+              <Text style={{ color: canaryDotColor }}> ●</Text>
+            )}
+          </Text>
+        )}
+      </Animated.View>
+    </Pressable>
+  );
+}

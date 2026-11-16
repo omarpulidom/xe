@@ -1,44 +1,39 @@
 import {
-  Montserrat_100Thin,
-  Montserrat_100Thin_Italic,
-  Montserrat_200ExtraLight,
-  Montserrat_200ExtraLight_Italic,
-  Montserrat_300Light,
-  Montserrat_300Light_Italic,
-  Montserrat_400Regular,
-  Montserrat_400Regular_Italic,
-  Montserrat_500Medium,
-  Montserrat_500Medium_Italic,
-  Montserrat_600SemiBold,
-  Montserrat_600SemiBold_Italic,
-  Montserrat_700Bold,
-  Montserrat_700Bold_Italic,
-  Montserrat_800ExtraBold,
-  Montserrat_800ExtraBold_Italic,
-  Montserrat_900Black,
-  Montserrat_900Black_Italic,
-} from '@expo-google-fonts/montserrat'
+  FiraCode_300Light,
+  FiraCode_400Regular,
+  FiraCode_500Medium,
+  FiraCode_600SemiBold,
+  FiraCode_700Bold,
+} from "@expo-google-fonts/fira-code";
+
+import {
+  GeistMono_100Thin,
+  GeistMono_200ExtraLight,
+  GeistMono_300Light,
+  GeistMono_400Regular,
+  GeistMono_500Medium,
+  GeistMono_600SemiBold,
+  GeistMono_700Bold,
+  GeistMono_800ExtraBold,
+  GeistMono_900Black,
+} from "@expo-google-fonts/geist-mono";
 
 export const AppFonts = {
-  Montserrat_100Thin,
-  Montserrat_200ExtraLight,
-  Montserrat_300Light,
-  Montserrat_400Regular,
-  Montserrat_500Medium,
-  Montserrat_600SemiBold,
-  Montserrat_700Bold,
-  Montserrat_800ExtraBold,
-  Montserrat_900Black,
+  FiraCode_300Light,
+  FiraCode_400Regular,
+  FiraCode_500Medium,
+  FiraCode_600SemiBold,
+  FiraCode_700Bold,
 
-  Montserrat_100Thin_Italic,
-  Montserrat_200ExtraLight_Italic,
-  Montserrat_300Light_Italic,
-  Montserrat_400Regular_Italic,
-  Montserrat_500Medium_Italic,
-  Montserrat_600SemiBold_Italic,
-  Montserrat_700Bold_Italic,
-  Montserrat_800ExtraBold_Italic,
-  Montserrat_900Black_Italic,
-} as const
+  GeistMono_100Thin,
+  GeistMono_200ExtraLight,
+  GeistMono_300Light,
+  GeistMono_400Regular,
+  GeistMono_500Medium,
+  GeistMono_600SemiBold,
+  GeistMono_700Bold,
+  GeistMono_800ExtraBold,
+  GeistMono_900Black,
+} as const;
 
-export type AppFontKeys = keyof typeof AppFonts
+export type AppFontKeys = keyof typeof AppFonts;
